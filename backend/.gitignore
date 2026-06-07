@@ -7,5 +7,8 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
-.python-version
+.venv/
+
+# Local secrets and runtime data
+.env
+runtime/
