@@ -1,0 +1,46 @@
+{
+  "todos": [
+    {
+      "id": "01",
+      "title": "Bun workspace and quality",
+      "spec": ".planning/spec/01-workspace-and-quality.md",
+      "completed": true
+    },
+    {
+      "id": "02",
+      "title": "Secure MCP server",
+      "spec": ".planning/spec/02-secure-mcp-server.md",
+      "completed": true
+    },
+    {
+      "id": "07",
+      "title": "Backend workspace capsule",
+      "spec": ".planning/spec/07-backend-workspace-capsule.md",
+      "completed": true
+    },
+    {
+      "id": "03",
+      "title": "Client run engine",
+      "spec": ".planning/spec/03-client-run-engine.md",
+      "completed": true
+    },
+    {
+      "id": "04",
+      "title": "Sessions and transcripts",
+      "spec": ".planning/spec/04-sessions-and-transcripts.md",
+      "completed": false
+    },
+    {
+      "id": "05",
+      "title": "React console",
+      "spec": ".planning/spec/05-react-console.md",
+      "completed": false
+    },
+    {
+      "id": "06",
+      "title": "Cutover and verification",
+      "spec": ".planning/spec/06-cutover-and-verification.md",
+      "completed": false
+    }
+  ]
+}

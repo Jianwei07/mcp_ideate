@@ -1,3 +1,9 @@
+# Backend Workspace
+
+Backend workspace for the localhost secure research console. The active Bun
+implementation lives in `client/`, `server/`, `contracts/`, `db/`, and
+`scripts/`.
+
 # Secure MCP Research POC
 
 A localhost research console demonstrating MCP sampling, logging, progress,
@@ -18,12 +24,11 @@ returns structured output for server-side citation validation.
 - MCP roots grant the server one temporary cache directory for the session.
 - Persistent JSONL audit logs contain metadata, hashes, and source block IDs,
   not questions, answers, prompts, or note text.
-- FastAPI binds to `127.0.0.1`.
+- The Bun host binds to `127.0.0.1`.
 - Answers without valid `[S1]`-style source markers are withheld.
 
 ## Prerequisites
 
-- Python 3.13 and `uv`
 - Bun 1.x
 - Ollama
 - A read-only Notion integration shared only with the CS230 root page
@@ -41,11 +46,7 @@ The application never downloads a model automatically.
 ```bash
 cd backend
 cp .env.example .env
-uv sync --extra dev
-cd ../frontend
 bun install
-bun run build
-cd ../backend
 ```
 
 Configure `.env`:
@@ -68,31 +69,34 @@ ollama serve
 Then start the research console:
 
 ```bash
-uv run secure-research
+bun run dev
 ```
+
+This starts the Bun host on `127.0.0.1:8000` with backend code reload enabled.
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
 For frontend development, run `bun run dev` from the repository's `frontend/`
-directory; Vite proxies `/api` to FastAPI on port 8000.
+directory; Vite proxies `/api` to the backend on port 8000.
 
 ## Request flow
 
 ```text
 Browser
-  -> FastAPI MCP client
+  -> Bun host/client
   -> research(query) over stdio
   -> MCP server fetches allowlisted Notion pages
   -> server requests sampling/createMessage
   -> MCP client calls local Ollama
   -> server validates citations
-  -> FastAPI streams trace and result events over SSE
+  -> Bun host streams trace and result events over SSE
 ```
 
 ## Tests
 
 ```bash
-uv run pytest
+bun test server/tests
+bun test client/tests
 ```
 
 The integration test starts mock Notion and Ollama endpoints, launches the MCP

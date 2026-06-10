@@ -14,7 +14,7 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { ResearchResult, TraceEvent } from "./types";
+import type { ResearchResult, RuntimeConfig, TraceEvent } from "./types";
 
 const SUGGESTED_QUESTIONS = [
   "What is the disciplined process for developing an ML project?",
@@ -24,6 +24,16 @@ const SUGGESTED_QUESTIONS = [
 
 type RunStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 
+const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
+  knowledge: "Approved page tree",
+  inference: "Local model",
+  transport: "MCP stdio",
+  audit: "Metadata only",
+};
+
+const TRIVIAL_GREETING_QUERY_RE =
+  /^(hi|hello|hey|yo|sup|thanks|thank you|good morning|good afternoon|good evening)$/;
+
 function App() {
   const [query, setQuery] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
@@ -31,7 +41,23 @@ function App() {
   const [events, setEvents] = useState<TraceEvent[]>([]);
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [error, setError] = useState("");
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(
+    DEFAULT_RUNTIME_CONFIG,
+  );
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/config")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((config: RuntimeConfig | null) => {
+        if (!cancelled && config) setRuntimeConfig(config);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => eventSourceRef.current?.close();
@@ -49,8 +75,14 @@ function App() {
     event.preventDefault();
     const cleanQuery = query.trim();
     if (cleanQuery.length < 3 || status === "running") return;
+    if (isTrivialGreetingQuery(cleanQuery)) {
+      setError("Ask a standalone research question about the approved CS230 notes.");
+      setStatus("idle");
+      return;
+    }
 
     eventSourceRef.current?.close();
+    eventSourceRef.current = null;
     setEvents([]);
     setResult(null);
     setError("");
@@ -64,37 +96,44 @@ function App() {
       });
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.detail ?? "Unable to start the research run");
+        throw new Error(
+          payload.message ?? payload.detail ?? "Unable to start the research run",
+        );
       }
 
       setRunId(payload.run_id);
       const stream = new EventSource(payload.events_url);
+      let terminal = false;
+      const finish = (nextStatus: RunStatus) => {
+        terminal = true;
+        setStatus(nextStatus);
+        stream.close();
+        if (eventSourceRef.current === stream) eventSourceRef.current = null;
+      };
       eventSourceRef.current = stream;
       stream.onmessage = (message) => {
         const trace = JSON.parse(message.data) as TraceEvent;
         setEvents((current) => [...current, trace]);
         if (trace.type === "result") {
           setResult(trace.data.result as ResearchResult);
-          setStatus("complete");
-          stream.close();
+          finish("complete");
         } else if (trace.type === "error") {
           setError(
             String(trace.data.display_message ?? "The research run failed"),
           );
-          setStatus("error");
-          stream.close();
+          finish("error");
         } else if (trace.type === "cancelled") {
-          setStatus("cancelled");
-          stream.close();
+          finish("cancelled");
         }
       };
       stream.onerror = () => {
-        if (stream.readyState === EventSource.CLOSED) return;
+        if (terminal) return;
         setError("The activity stream was interrupted.");
-        setStatus("error");
-        stream.close();
+        finish("error");
       };
     } catch (caught) {
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
       setStatus("error");
       setError(caught instanceof Error ? caught.message : "Request failed");
     }
@@ -102,7 +141,11 @@ function App() {
 
   async function cancelRun() {
     if (!runId) return;
-    await fetch(`/api/runs/${runId}`, { method: "DELETE" });
+    const response = await fetch(`/api/runs/${runId}`, { method: "DELETE" });
+    if (!response.ok) return;
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+    setStatus("cancelled");
   }
 
   const isRunning = status === "running";
@@ -141,22 +184,22 @@ function App() {
               <BoundaryItem
                 icon={<FileLock size={17} />}
                 label="Knowledge"
-                value="CS230 page tree"
+                value={runtimeConfig.knowledge}
               />
               <BoundaryItem
                 icon={<Brain size={17} />}
                 label="Inference"
-                value="Gemma 4 · local"
+                value={runtimeConfig.inference}
               />
               <BoundaryItem
                 icon={<TerminalWindow size={17} />}
                 label="Transport"
-                value="MCP stdio"
+                value={runtimeConfig.transport}
               />
               <BoundaryItem
                 icon={<Database size={17} />}
                 label="Audit"
-                value="Metadata only"
+                value={runtimeConfig.audit}
               />
             </div>
 
@@ -199,10 +242,7 @@ function App() {
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     onKeyDown={(event) => {
-                      if (
-                        event.key === "Enter" &&
-                        (event.metaKey || event.ctrlKey)
-                      ) {
+                      if (event.key === "Enter" && !event.shiftKey) {
                         event.preventDefault();
                         event.currentTarget.form?.requestSubmit();
                       }
@@ -227,7 +267,7 @@ function App() {
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500">
                   <span>Stateless run · approved evidence only</span>
-                  <span className="font-mono">⌘ Enter</span>
+                  <span className="font-mono">Enter · Shift Enter newline</span>
                 </div>
               </form>
 
@@ -301,6 +341,11 @@ function App() {
       </div>
     </main>
   );
+}
+
+function isTrivialGreetingQuery(query: string): boolean {
+  const normalized = query.trim().toLowerCase().replace(/[!?.]+$/g, "");
+  return TRIVIAL_GREETING_QUERY_RE.test(normalized);
 }
 
 function BoundaryItem({

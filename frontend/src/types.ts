@@ -28,3 +28,10 @@ export type TraceEvent = {
   message: string;
   data: Record<string, unknown>;
 };
+
+export type RuntimeConfig = {
+  knowledge: string;
+  inference: string;
+  transport: string;
+  audit: string;
+};

@@ -1,0 +1,11 @@
+{
+  "name": "@secure-research/server",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@secure-research/contracts": "workspace:*",
+    "zod": "^3.25.76"
+  }
+}
