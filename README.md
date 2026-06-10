@@ -38,8 +38,7 @@ bun run dev
 ## Checks
 
 ```bash
-cd backend && bun test server/tests && bun test client/tests
-cd frontend && bun run build
+cd backend && bun run check
 ```
 
 For frontend development, `bun run dev` from `frontend/` proxies `/api` to the

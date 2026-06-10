@@ -45,6 +45,27 @@ observable MCP foundation that can later expand into AI Ops incident triage.
   - real stdio integration test runs the Bun MCP server against fake Notion and
     proves inference delegates back to client-side sampling;
   - fixed interrupted-turn recovery to update only non-terminal states.
+- Completed sessions/transcripts slice:
+  - `GET /api/sessions` and `GET /api/sessions/:id` expose persisted sessions;
+  - `GET /api/runs/:id/events?after=N` replays persisted transcript events and
+    streams active runs;
+  - volatile event details are available only while the run is active;
+  - persistence tests prove session history survives restart, terminal turns are
+    not marked interrupted, citation excerpts stay out of SQLite, and raw details
+    stay out of SQLite/JSONL audit.
+- Completed React console slice:
+  - session sidebar loads persisted sessions and replays selected turn events;
+  - composer sends optional thinking requests;
+  - sampling approval card approves or denies `/api/runs/:id/sampling`;
+  - trace rows are clickable and show masked metadata/detail inspection;
+  - metrics include event count, source count, elapsed time, and prompt/output
+    token counts when available.
+- Completed final cutover:
+  - root `TESTS.md`, root README, backend README, planning state, and verification
+    evidence updated;
+  - full `cd backend && bun run check` passes with 14 tests and frontend build;
+  - `cd backend && bun run dev` reaches healthy long-running startup;
+  - no backend Python runtime files remain.
 
 ## Verified
 
@@ -61,13 +82,15 @@ observable MCP foundation that can later expand into AI Ops incident triage.
 - `cd frontend && bun run build` passes.
 - `cd backend && bun run lint:client` passes.
 - `cd backend && bun run format:check` passes.
+- `cd backend && bun test client/tests` passes: 9 tests.
+- `cd frontend && bun run build` passes after React console wiring.
+- `cd backend && bun run check` passes after final cutover: 14 tests.
+- `cd backend && bun run dev` reaches healthy startup; timeout is expected for
+  the long-running supervisor.
 
 ## Next Implementation Order
 
-1. Add Bun HTTP/SSE routes, volatile detail endpoint, cancellation, and one
-   active turn policy.
-2. Integrate the React UI in `frontend/src/`, then add client integration tests.
-3. Continue cutover verification and frontend/session completion.
+1. Run goal-backward verification if desired, then prepare a commit/PR when ready.
 
 ## Important Constraints
 

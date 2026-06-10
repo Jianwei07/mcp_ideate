@@ -105,14 +105,23 @@ export function createHost(
       const eventMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/events$/);
       if (eventMatch && request.method === "GET") {
         const after = Number.parseInt(url.searchParams.get("after") ?? "0", 10);
-        return streamRun(eventMatch[1], Number.isSafeInteger(after) ? after : 0, store, activeRuns);
+        return streamRun(
+          eventMatch[1],
+          Number.isSafeInteger(after) ? after : 0,
+          store,
+          activeRuns,
+        );
       }
 
       const detailMatch = url.pathname.match(
         /^\/api\/runs\/([^/]+)\/events\/(\d+)\/detail$/,
       );
       if (detailMatch && request.method === "GET") {
-        return eventDetail(detailMatch[1], Number.parseInt(detailMatch[2], 10), activeRuns);
+        return eventDetail(
+          detailMatch[1],
+          Number.parseInt(detailMatch[2], 10),
+          activeRuns,
+        );
       }
 
       const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
@@ -232,11 +241,13 @@ function streamRun(
   let streamClient: StreamClient | null = null;
   const stream = new ReadableStream<string>({
     start(controller) {
-      for (const event of replay) controller.enqueue(sseData(toFrontendEvent(runId, event)));
+      for (const event of replay)
+        controller.enqueue(sseData(toFrontendEvent(runId, event)));
       if (!run) {
         controller.close();
         return;
       }
+      const activeRun = run;
       const client: StreamClient = {
         controller,
         heartbeat: setInterval(() => {
@@ -244,18 +255,18 @@ function streamRun(
             controller.enqueue(": keepalive\n\n");
           } catch {
             clearInterval(client.heartbeat);
-            run.clients.delete(client);
+            activeRun.clients.delete(client);
           }
         }, SSE_HEARTBEAT_MS),
       };
       streamClient = client;
-      run.clients.add(client);
+      activeRun.clients.add(client);
       controller.enqueue(": connected\n\n");
     },
     cancel() {
       if (streamClient) {
         clearInterval(streamClient.heartbeat);
-        run.clients.delete(streamClient);
+        run?.clients.delete(streamClient);
       }
     },
   });
@@ -467,7 +478,10 @@ function sseData(event: Record<string, unknown>): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
-function toFrontendEvent(runId: string, event: TranscriptEvent): Record<string, unknown> {
+function toFrontendEvent(
+  runId: string,
+  event: TranscriptEvent,
+): Record<string, unknown> {
   return {
     sequence: event.sequence,
     run_id: runId,

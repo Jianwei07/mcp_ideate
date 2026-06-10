@@ -28,19 +28,19 @@
       "id": "04",
       "title": "Sessions and transcripts",
       "spec": ".planning/spec/04-sessions-and-transcripts.md",
-      "completed": false
+      "completed": true
     },
     {
       "id": "05",
       "title": "React console",
       "spec": ".planning/spec/05-react-console.md",
-      "completed": false
+      "completed": true
     },
     {
       "id": "06",
       "title": "Cutover and verification",
       "spec": ".planning/spec/06-cutover-and-verification.md",
-      "completed": false
+      "completed": true
     }
   ]
 }

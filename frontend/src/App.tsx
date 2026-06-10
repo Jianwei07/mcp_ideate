@@ -14,7 +14,14 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { ResearchResult, RuntimeConfig, TraceEvent } from "./types";
+import type {
+  ResearchResult,
+  RuntimeConfig,
+  SessionDetail,
+  SessionSummary,
+  SessionTurn,
+  TraceEvent,
+} from "./types";
 
 const SUGGESTED_QUESTIONS = [
   "What is the disciplined process for developing an ML project?",
@@ -38,7 +45,14 @@ function App() {
   const [query, setQuery] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<RunStatus>("idle");
+  const [thinking, setThinking] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [events, setEvents] = useState<TraceEvent[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<TraceEvent | null>(null);
+  const [eventDetail, setEventDetail] = useState<Record<string, unknown> | null>(
+    null,
+  );
+  const [approvalPending, setApprovalPending] = useState(false);
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [error, setError] = useState("");
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(
@@ -60,6 +74,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    void loadSessions();
+  }, []);
+
+  useEffect(() => {
     return () => eventSourceRef.current?.close();
   }, []);
 
@@ -70,6 +88,27 @@ function App() {
     const value = terminal?.data.duration_ms;
     return typeof value === "number" ? `${(value / 1000).toFixed(1)}s` : "—";
   }, [events]);
+
+  const tokenMetrics = useMemo(() => {
+    for (const event of [...events].reverse()) {
+      const promptTokens = event.data.promptTokens;
+      const outputTokens = event.data.outputTokens;
+      if (typeof promptTokens === "number" || typeof outputTokens === "number") {
+        return {
+          promptTokens: typeof promptTokens === "number" ? promptTokens : 0,
+          outputTokens: typeof outputTokens === "number" ? outputTokens : 0,
+        };
+      }
+    }
+    return { promptTokens: 0, outputTokens: 0 };
+  }, [events]);
+
+  async function loadSessions() {
+    const response = await fetch("/api/sessions").catch(() => null);
+    if (!response?.ok) return;
+    const payload = (await response.json()) as { sessions: SessionSummary[] };
+    setSessions(payload.sessions);
+  }
 
   async function startRun(event: FormEvent) {
     event.preventDefault();
@@ -84,6 +123,9 @@ function App() {
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
     setEvents([]);
+    setSelectedEvent(null);
+    setEventDetail(null);
+    setApprovalPending(false);
     setResult(null);
     setError("");
     setStatus("running");
@@ -92,7 +134,7 @@ function App() {
       const response = await fetch("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: cleanQuery }),
+        body: JSON.stringify({ query: cleanQuery, thinking }),
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -114,15 +156,22 @@ function App() {
       stream.onmessage = (message) => {
         const trace = JSON.parse(message.data) as TraceEvent;
         setEvents((current) => [...current, trace]);
+        if (trace.stage === "approval" && trace.type === "trace") {
+          setApprovalPending(true);
+        }
         if (trace.type === "result") {
           setResult(trace.data.result as ResearchResult);
+          setApprovalPending(false);
+          void loadSessions();
           finish("complete");
         } else if (trace.type === "error") {
           setError(
             String(trace.data.display_message ?? "The research run failed"),
           );
+          setApprovalPending(false);
           finish("error");
         } else if (trace.type === "cancelled") {
+          setApprovalPending(false);
           finish("cancelled");
         }
       };
@@ -135,8 +184,19 @@ function App() {
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
       setStatus("error");
+      setApprovalPending(false);
       setError(caught instanceof Error ? caught.message : "Request failed");
     }
+  }
+
+  async function decideSampling(decision: "approve" | "deny") {
+    if (!runId) return;
+    const response = await fetch(`/api/runs/${runId}/sampling`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    });
+    if (response.ok) setApprovalPending(false);
   }
 
   async function cancelRun() {
@@ -146,6 +206,42 @@ function App() {
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
     setStatus("cancelled");
+    setApprovalPending(false);
+  }
+
+  async function selectSession(sessionId: string) {
+    const response = await fetch(`/api/sessions/${sessionId}`);
+    if (!response.ok) return;
+    const payload = (await response.json()) as { session: SessionDetail };
+    const turn = payload.session.turns?.at(-1);
+    if (!turn) return;
+
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+    setRunId(turn.id);
+    setQuery(turn.query);
+    setStatus(turnStatusToRunStatus(turn));
+    setResult(turnToResult(turn));
+    setError(turn.errorMessage ?? "");
+    setApprovalPending(false);
+    setSelectedEvent(null);
+    setEventDetail(null);
+
+    const eventsResponse = await fetch(`/api/runs/${turn.id}/events`);
+    if (eventsResponse.ok) setEvents(parseSseEvents(await eventsResponse.text()));
+  }
+
+  async function selectTraceEvent(event: TraceEvent) {
+    setSelectedEvent(event);
+    setEventDetail(null);
+    if (!runId) return;
+    const response = await fetch(
+      `/api/runs/${runId}/events/${event.sequence}/detail`,
+    );
+    if (response.ok) {
+      const payload = (await response.json()) as { detail: Record<string, unknown> };
+      setEventDetail(payload.detail);
+    }
   }
 
   const isRunning = status === "running";
@@ -212,7 +308,30 @@ function App() {
                   value={String(result?.sources.length ?? 0)}
                 />
                 <Metric label="Elapsed" value={duration} />
+                <Metric
+                  label="Tokens"
+                  value={`${tokenMetrics.promptTokens}/${tokenMetrics.outputTokens}`}
+                />
               </dl>
+            </div>
+
+            <div className="mt-8 border-t border-zinc-300 pt-5">
+              <p className="eyebrow">Sessions</p>
+              <div className="mt-3 space-y-1">
+                {sessions.length === 0 ? (
+                  <p className="text-xs leading-5 text-zinc-500">No persisted turns yet.</p>
+                ) : (
+                  sessions.slice(0, 8).map((session) => (
+                    <button
+                      key={session.id}
+                      onClick={() => void selectSession(session.id)}
+                      className="block w-full truncate rounded-md px-2 py-2 text-left text-xs text-zinc-600 transition-colors duration-150 hover:bg-zinc-200 hover:text-zinc-950"
+                    >
+                      {session.title}
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           </aside>
 
@@ -269,6 +388,16 @@ function App() {
                   <span>Stateless run · approved evidence only</span>
                   <span className="font-mono">Enter · Shift Enter newline</span>
                 </div>
+                <label className="mt-3 flex items-center gap-2 text-xs text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={thinking}
+                    disabled={isRunning}
+                    onChange={(event) => setThinking(event.target.checked)}
+                    className="size-3.5 accent-zinc-900"
+                  />
+                  Request model thinking if the local model supports it
+                </label>
               </form>
 
               {status === "idle" && (
@@ -290,6 +419,13 @@ function App() {
                     ))}
                   </div>
                 </div>
+              )}
+
+              {approvalPending && (
+                <ApprovalCard
+                  onApprove={() => void decideSampling("approve")}
+                  onDeny={() => void decideSampling("deny")}
+                />
               )}
 
               {isRunning && <LoadingAnswer onCancel={cancelRun} />}
@@ -331,11 +467,19 @@ function App() {
               ) : (
                 <ol className="space-y-0">
                   {events.map((event) => (
-                    <TraceRow key={event.sequence} event={event} />
+                    <TraceRow
+                      key={event.sequence}
+                      event={event}
+                      selected={selectedEvent?.sequence === event.sequence}
+                      onSelect={() => void selectTraceEvent(event)}
+                    />
                   ))}
                 </ol>
               )}
             </div>
+            {selectedEvent && (
+              <TraceDetail event={selectedEvent} detail={eventDetail} />
+            )}
           </aside>
         </div>
       </div>
@@ -397,6 +541,43 @@ function LoadingAnswer({ onCancel }: { onCancel: () => void }) {
         <div className="skeleton h-3 w-[88%]" />
         <div className="skeleton h-3 w-full" />
         <div className="skeleton h-3 w-[72%]" />
+      </div>
+    </div>
+  );
+}
+
+function ApprovalCard({
+  onApprove,
+  onDeny,
+}: {
+  onApprove: () => void;
+  onDeny: () => void;
+}) {
+  return (
+    <div className="mt-8 animate-enter border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-zinc-800">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-medium text-amber-950">Sampling approval required</p>
+          <p className="mt-1 leading-6 text-amber-900">
+            The server retrieved evidence and is asking the client-side model to
+            produce a grounded answer. Raw prompts stay local and are not
+            persisted.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            onClick={onDeny}
+            className="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-950 transition-colors duration-150 hover:bg-amber-100"
+          >
+            Deny
+          </button>
+          <button
+            onClick={onApprove}
+            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-stone-50 transition-colors duration-150 hover:bg-zinc-800"
+          >
+            Approve
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -492,12 +673,22 @@ function CitedText({ text }: { text: string }) {
   );
 }
 
-function TraceRow({ event }: { event: TraceEvent }) {
+function TraceRow({
+  event,
+  selected,
+  onSelect,
+}: {
+  event: TraceEvent;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const isComplete = event.type === "result";
   const isError = event.type === "error";
   return (
     <li
-      className="animate-trace grid grid-cols-[20px_1fr] gap-3 border-l border-zinc-300 pb-5 pl-4 last:pb-0"
+      className={`animate-trace grid grid-cols-[20px_1fr] gap-3 border-l pb-5 pl-4 last:pb-0 ${
+        selected ? "border-amber-700" : "border-zinc-300"
+      }`}
       style={{ animationDelay: `${Math.min(event.sequence * 24, 180)}ms` }}
     >
       <span className="-ml-[25px] grid size-5 place-items-center rounded-full bg-stone-100 text-zinc-500">
@@ -509,7 +700,7 @@ function TraceRow({ event }: { event: TraceEvent }) {
           <span className="size-1.5 rounded-full bg-zinc-500" />
         )}
       </span>
-      <div className="-mt-0.5 min-w-0">
+      <button className="-mt-0.5 min-w-0 text-left" onClick={onSelect}>
         <div className="flex items-center justify-between gap-3">
           <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-500">
             {event.stage}
@@ -531,9 +722,71 @@ function TraceRow({ event }: { event: TraceEvent }) {
             />
           </div>
         )}
-      </div>
+      </button>
     </li>
   );
+}
+
+function TraceDetail({
+  event,
+  detail,
+}: {
+  event: TraceEvent;
+  detail: Record<string, unknown> | null;
+}) {
+  return (
+    <div className="mt-5 border-t border-zinc-300 pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="eyebrow">Event details</p>
+        <span className="font-mono text-[10px] text-zinc-500">
+          #{event.sequence.toString().padStart(2, "0")}
+        </span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-zinc-500">
+        Protected prompts, excerpts, and raw protocol payloads are masked from
+        persisted history.
+      </p>
+      <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-zinc-900 p-3 text-[11px] leading-5 text-stone-100">
+        {JSON.stringify(detail ?? event.data, null, 2)}
+      </pre>
+    </div>
+  );
+}
+
+function turnStatusToRunStatus(turn: SessionTurn): RunStatus {
+  if (turn.status === "complete") return "complete";
+  if (turn.status === "cancelled") return "cancelled";
+  if (turn.status === "error" || turn.status === "interrupted") return "error";
+  return "idle";
+}
+
+function turnToResult(turn: SessionTurn): ResearchResult | null {
+  if (!turn.answer) return null;
+  return {
+    status: turn.status === "error" ? "error" : "answered",
+    answer: turn.answer,
+    rationale: turn.rationale ?? "",
+    cited_source_ids: turn.citations.map((source) => source.sourceId),
+    citation_valid: true,
+    sources: turn.citations.map((source) => ({
+      source_id: source.sourceId,
+      page_id: source.pageId,
+      page_title: source.pageTitle,
+      page_url: source.pageUrl,
+      heading_path: source.headingPath,
+      block_ids: source.blockIds,
+      score: source.score,
+      excerpt: source.excerpt,
+    })),
+  };
+}
+
+function parseSseEvents(text: string): TraceEvent[] {
+  return text
+    .split("\n\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => JSON.parse(line.slice(6)) as TraceEvent);
 }
 
 export default App;

@@ -35,3 +35,53 @@ export type RuntimeConfig = {
   transport: string;
   audit: string;
 };
+
+export type SessionSummary = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SessionTurn = {
+  id: string;
+  sessionId: string;
+  query: string;
+  answer: string | null;
+  rationale: string | null;
+  status:
+    | "pending"
+    | "running"
+    | "awaiting_approval"
+    | "complete"
+    | "error"
+    | "cancelled"
+    | "denied"
+    | "interrupted";
+  model: string;
+  thinkingRequested: boolean;
+  thinkingSupported: boolean;
+  promptTokens: number | null;
+  outputTokens: number | null;
+  contextTokens: number;
+  totalDurationMs: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  retryable: boolean | null;
+  createdAt: string;
+  updatedAt: string;
+  citations: Array<{
+    sourceId: string;
+    pageId: string;
+    pageTitle: string;
+    pageUrl: string;
+    headingPath: string[];
+    blockIds: string[];
+    score: number;
+    excerpt: string;
+  }>;
+};
+
+export type SessionDetail = SessionSummary & {
+  turns?: SessionTurn[];
+};

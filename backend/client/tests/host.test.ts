@@ -91,7 +91,9 @@ describe("host API", () => {
     const sessions = (await (await fetch(`${baseUrl}/api/sessions`)).json()) as {
       sessions: Array<{ id: string }>;
     };
-    const restored = (await (await fetch(`${baseUrl}/api/sessions/${session.id}`)).json()) as {
+    const restored = (await (
+      await fetch(`${baseUrl}/api/sessions/${session.id}`)
+    ).json()) as {
       session: { turns: Array<{ id: string }> };
     };
     const events = await (await fetch(`${baseUrl}/api/runs/${turn.id}/events`)).text();

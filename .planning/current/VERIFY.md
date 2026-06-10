@@ -68,3 +68,40 @@ Spec state:
 - Stale Python/FastAPI/uv reference search: remaining matches are only under the
   separate `roots_sample/` course sample.
 - `cd backend && bun run check`: pass, 8 tests.
+
+## Client Run Engine
+
+- Added sampling approval broker and host approval endpoints.
+- Added real stdio integration test that starts the Bun MCP server against fake
+  Notion and proves inference delegates back to client-side sampling.
+- Fixed interrupted-turn recovery to update only non-terminal states.
+- `cd backend && bun test client/tests server/tests`: pass, 10 tests.
+- `cd backend && bun run typecheck`: pass.
+- `cd frontend && bun run build`: pass.
+- `cd backend && bun run lint:client`: pass.
+- `cd backend && bun run format:check`: pass.
+
+## Sessions And React Console
+
+- Added persisted session APIs, SSE replay, volatile detail endpoint, session
+  restart tests, citation excerpt omission tests, and JSONL detail omission tests.
+- Added React session sidebar, thinking toggle, sampling approval card, clickable
+  trace details, metrics, replay, and session result inspection.
+- `cd backend && bun test client/tests`: pass, 9 tests.
+- `cd backend && bun run typecheck`: pass.
+- `cd backend && bun run lint:client`: pass.
+- `cd backend && bun run format:check`: pass.
+- `cd frontend && bun run build`: pass.
+
+## Final Cutover
+
+- Added root `TESTS.md` with full and sliced verification commands.
+- Updated root and backend READMEs to document Bun as the canonical runtime and
+  `cd backend && bun run check` as the cutover gate.
+- `cd backend && bun run check`: pass, 14 tests, frontend build included.
+- `cd backend && bun run dev`: reaches healthy supervisor startup; timeout is
+  expected because the dev server is long-running.
+- Backend stale runtime search: no `backend/**/*.py`, `backend/**/pyproject.toml`,
+  or `backend/**/uv.lock` files remain.
+- Stale Python/FastAPI/Gemma backend references: none outside historical
+  verification notes and the separate `roots_sample/` course sample.

@@ -131,7 +131,8 @@ describe("session persistence", () => {
         { protectedPayload: "PROTECTED RAW PAYLOAD" },
       );
 
-      const audit = await readFile(join(directory, "audit", "research-audit.jsonl"),
+      const audit = await readFile(
+        join(directory, "audit", "research-audit.jsonl"),
         "utf8",
       );
       const events = store.listEvents(turn.id);

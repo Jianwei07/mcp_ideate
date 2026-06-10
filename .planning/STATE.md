@@ -9,8 +9,8 @@ is the canonical backend runtime with a host/client, independent stdio MCP serve
 contracts, and SQLite persistence.
 
 Existing dirty files are inside the approved migration surface and must not be
-discarded. Legacy Python backend runtime files are being removed after Bun checks
+discarded. Legacy Python backend runtime files were removed after Bun checks
 passed.
 
-Next action: execute `.planning/spec/specs.json` in order, then run goal-backward
-verification.
+Next action: review the completed cutover diff, then commit or open a PR when
+ready.
