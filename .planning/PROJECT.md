@@ -4,12 +4,17 @@
 
 Build a small, security-first MCP laboratory that makes the relationship
 between a customer-side MCP host/client and a protected MCP server visible.
+Use it as a practice and ideation harness for advanced MCP client/server topics,
+AI inference boundaries, security controls, and future agent test loops.
 
 ## Core Value
 
 - The client owns local inference, approvals, sessions, and future agent loops.
 - The server owns protected credentials, allowlisting, retrieval, and tools.
 - Every run is observable through protocol-derived events and grounded citations.
+- The frontend should feel like a chatbot-style lab bench: easy to practice
+  sampling approvals, deny/allow policies, retries, traces, and security
+  boundaries without hiding the protocol mechanics.
 
 ## Constraints
 

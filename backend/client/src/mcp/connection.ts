@@ -65,8 +65,8 @@ export class McpConnection {
           method: messageMethod(message),
           requestId: messageId(message),
           parentRequestId: null,
-          level: "debug",
-          status: "running",
+          level: messageLevel(message),
+          status: messageStatus(message),
           summary: summarizeMessage(direction, message),
           durationMs: null,
           metadata: safeMessageMetadata(message),
@@ -365,6 +365,18 @@ function messageKind(message: JSONRPCMessage): string {
   if ("method" in message) return "notification";
   if ("error" in message) return "error";
   return "response";
+}
+
+function messageLevel(message: JSONRPCMessage): McpConnectionEvent["level"] {
+  if (messageMethod(message) === "notifications/cancelled") return "warning";
+  if ("error" in message) return "error";
+  return "debug";
+}
+
+function messageStatus(message: JSONRPCMessage): McpConnectionEvent["status"] {
+  if (messageMethod(message) === "notifications/cancelled") return "cancelled";
+  if ("error" in message) return "error";
+  return "running";
 }
 
 function messageMethod(message: JSONRPCMessage): string | null {

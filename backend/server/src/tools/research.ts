@@ -168,6 +168,18 @@ export function registerResearchTool(mcp: McpServer, config: ServerConfig): void
               },
         );
       } catch (error) {
+        if (isExpectedAbort(error)) {
+          await log(
+            mcp,
+            "warning",
+            "cancelled",
+            "Research request cancelled by client",
+          ).catch(() => undefined);
+          return {
+            content: [{ type: "text", text: "Research request cancelled." }],
+            isError: true,
+          };
+        }
         const message = safeServerError(error);
         await log(mcp, "error", "error", message);
         console.error("[secure-research-server]", error);
@@ -259,4 +271,11 @@ function safeServerError(error: unknown): string {
   return allowed.test(message)
     ? message.slice(0, 300)
     : "The secure research server could not complete the request.";
+}
+
+function isExpectedAbort(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /AbortError|operation was aborted|RequestTimeout|cancelled/i.test(
+    error.message,
+  );
 }

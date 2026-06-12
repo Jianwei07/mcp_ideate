@@ -1,4 +1,6 @@
-export type SamplingApprovalDecision = "approve" | "deny";
+import type { SamplingDecision } from "@secure-research/contracts";
+
+export type SamplingApprovalDecision = SamplingDecision;
 
 export type SamplingApprovalRequest = {
   id: string;
@@ -16,11 +18,13 @@ type PendingApproval = SamplingApprovalRequest & {
 
 export class SamplingApprovalBroker {
   private readonly pendingByTurn = new Map<string, PendingApproval>();
+  private readonly autoApprovedTurns = new Set<string>();
 
   request(
     input: Pick<SamplingApprovalRequest, "turnId" | "messageCount">,
     signal?: AbortSignal,
   ): Promise<SamplingApprovalDecision> {
+    if (this.autoApprovedTurns.has(input.turnId)) return Promise.resolve("approve");
     const existing = this.pendingByTurn.get(input.turnId);
     if (existing)
       return Promise.reject(new Error("Sampling approval is already pending."));
@@ -62,6 +66,7 @@ export class SamplingApprovalBroker {
   decide(turnId: string, decision: SamplingApprovalDecision): boolean {
     const pending = this.pendingByTurn.get(turnId);
     if (!pending) return false;
+    if (decision === "approve_always") this.autoApprovedTurns.add(turnId);
     this.pendingByTurn.delete(turnId);
     pending.signal?.removeEventListener("abort", pending.onAbort);
     pending.resolve(decision);
@@ -69,6 +74,7 @@ export class SamplingApprovalBroker {
   }
 
   cancel(turnId: string): void {
+    this.autoApprovedTurns.delete(turnId);
     const pending = this.pendingByTurn.get(turnId);
     if (!pending) return;
     this.pendingByTurn.delete(turnId);

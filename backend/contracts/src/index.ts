@@ -108,8 +108,10 @@ export const createTurnSchema = z.object({
 });
 
 export const samplingDecisionSchema = z.object({
-  decision: z.enum(["approve", "deny"]),
+  decision: z.enum(["approve", "approve_always", "deny"]),
 });
+
+export type SamplingDecision = z.infer<typeof samplingDecisionSchema>["decision"];
 
 export const apiErrorSchema = z.object({
   code: z.string(),

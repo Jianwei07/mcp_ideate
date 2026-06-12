@@ -35,7 +35,7 @@ type HostOptions = {
 
 type RunExecutor = typeof executeRun;
 
-const RUN_TIMEOUT_MS = 60_000;
+const RUN_TIMEOUT_MS = 180_000;
 const SSE_HEARTBEAT_MS = 5_000;
 const NON_RESEARCH_MESSAGE =
   "Ask a standalone research question about the approved CS230 notes.";
@@ -247,7 +247,12 @@ async function decideSampling(
   const accepted = approvals.decide(runId, input.decision);
   if (!accepted) return Response.json({ status: "not_found" }, { status: 404 });
   return Response.json({
-    status: input.decision === "approve" ? "approved" : "denied",
+    status:
+      input.decision === "deny"
+        ? "denied"
+        : input.decision === "approve_always"
+          ? "auto_approved"
+          : "approved",
   });
 }
 
@@ -320,7 +325,7 @@ function eventDetail(
 function cancelRun(runId: string, activeRuns: Map<string, ActiveRun>): Response {
   const run = activeRuns.get(runId);
   run?.controller.abort();
-  console.error(
+  console.warn(
     `[secure-research] run=${runId} level=warning status=cancelled Run cancellation requested`,
   );
   broadcast(activeRuns, runId, {
@@ -363,6 +368,7 @@ async function executeRun(
     thinkingRequested,
     thinkingSupported: ollama.supportsThinking(),
     approveSampling: async ({ messageCount, signal }) => {
+      pauseRunTimeout(activeRuns.get(runId));
       store.updateTurn(runId, { status: "awaiting_approval" });
       await recorder.record({
         channel: "application",
@@ -379,7 +385,10 @@ async function executeRun(
         metadata: { messageCount },
       });
       const decision = await approvals.request({ turnId: runId, messageCount }, signal);
-      if (decision === "approve") store.updateTurn(runId, { status: "running" });
+      if (decision !== "deny") {
+        store.updateTurn(runId, { status: "running" });
+        resetRunTimeout(activeRuns.get(runId));
+      }
       return decision;
     },
     emit: async (event) => {
@@ -628,6 +637,21 @@ function closeRun(activeRuns: Map<string, ActiveRun>, runId: string): void {
     }
   }
   activeRuns.delete(runId);
+}
+
+function pauseRunTimeout(run: ActiveRun | undefined): void {
+  if (!run) return;
+  clearTimeout(run.timeout);
+}
+
+function resetRunTimeout(run: ActiveRun | undefined): void {
+  if (!run) return;
+  clearTimeout(run.timeout);
+  run.timedOut = false;
+  run.timeout = setTimeout(() => {
+    run.timedOut = true;
+    run.controller.abort();
+  }, RUN_TIMEOUT_MS);
 }
 
 function storeCancelledRun(runId: string, activeRuns: Map<string, ActiveRun>): void {

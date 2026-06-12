@@ -172,4 +172,70 @@ describe("session persistence", () => {
     expect(line).toContain('metadata={"method":"tools/call"}');
     expect(line).not.toContain("PROTECTED RAW PAYLOAD");
   });
+
+  test("terminal mirror routes non-errors away from stderr", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "secure-research-terminal-"));
+    const logs: string[] = [];
+    const errors: string[] = [];
+    const originalLog = console.log;
+    const originalError = console.error;
+
+    try {
+      console.log = (line?: unknown) => logs.push(String(line));
+      console.error = (line?: unknown) => errors.push(String(line));
+      const store = new SessionStore(join(directory, "research.db"));
+      const session = store.createSession("Terminal routing");
+      const turn = store.createTurn({
+        sessionId: session.id,
+        query: "Terminal routing",
+        model: "test-model",
+        thinkingRequested: false,
+        thinkingSupported: false,
+        contextTokens: 8192,
+      });
+      const recorder = new TranscriptRecorder(
+        turn.id,
+        store,
+        new MetadataAudit(join(directory, "audit")),
+      );
+
+      await recorder.record({
+        channel: "application",
+        origin: "host",
+        direction: "internal",
+        kind: "run",
+        method: null,
+        requestId: null,
+        parentRequestId: null,
+        level: "info",
+        status: "running",
+        summary: "Info event",
+        durationMs: null,
+        metadata: {},
+      });
+      await recorder.record({
+        channel: "application",
+        origin: "host",
+        direction: "internal",
+        kind: "run",
+        method: null,
+        requestId: null,
+        parentRequestId: null,
+        level: "error",
+        status: "error",
+        summary: "Error event",
+        durationMs: null,
+        metadata: {},
+      });
+
+      expect(logs.some((line) => line.includes("Info event"))).toBeTrue();
+      expect(errors.some((line) => line.includes("Error event"))).toBeTrue();
+      expect(errors.some((line) => line.includes("Info event"))).toBeFalse();
+      store.close();
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

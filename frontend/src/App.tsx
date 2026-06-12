@@ -30,6 +30,7 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 type RunStatus = "idle" | "running" | "complete" | "error" | "cancelled";
+type SamplingDecision = "approve" | "approve_always" | "deny";
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   knowledge: "Approved page tree",
@@ -43,6 +44,7 @@ const TRIVIAL_GREETING_QUERY_RE =
 
 function App() {
   const [query, setQuery] = useState("");
+  const [activeQuestion, setActiveQuestion] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<RunStatus>("idle");
   const [thinking, setThinking] = useState(false);
@@ -53,6 +55,7 @@ function App() {
     null,
   );
   const [approvalPending, setApprovalPending] = useState(false);
+  const [autoApproveSampling, setAutoApproveSampling] = useState(false);
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [error, setError] = useState("");
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(
@@ -126,9 +129,11 @@ function App() {
     setSelectedEvent(null);
     setEventDetail(null);
     setApprovalPending(false);
+    setAutoApproveSampling(false);
     setResult(null);
     setError("");
     setStatus("running");
+    setActiveQuestion(cleanQuery);
 
     try {
       const response = await fetch("/api/runs", {
@@ -189,14 +194,17 @@ function App() {
     }
   }
 
-  async function decideSampling(decision: "approve" | "deny") {
+  async function decideSampling(decision: SamplingDecision) {
     if (!runId) return;
     const response = await fetch(`/api/runs/${runId}/sampling`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision }),
     });
-    if (response.ok) setApprovalPending(false);
+    if (response.ok) {
+      setApprovalPending(false);
+      if (decision === "approve_always") setAutoApproveSampling(true);
+    }
   }
 
   async function cancelRun() {
@@ -207,6 +215,7 @@ function App() {
     eventSourceRef.current = null;
     setStatus("cancelled");
     setApprovalPending(false);
+    setAutoApproveSampling(false);
   }
 
   async function selectSession(sessionId: string) {
@@ -220,10 +229,12 @@ function App() {
     eventSourceRef.current = null;
     setRunId(turn.id);
     setQuery(turn.query);
+    setActiveQuestion(turn.query);
     setStatus(turnStatusToRunStatus(turn));
     setResult(turnToResult(turn));
     setError(turn.errorMessage ?? "");
     setApprovalPending(false);
+    setAutoApproveSampling(false);
     setSelectedEvent(null);
     setEventDetail(null);
 
@@ -338,13 +349,13 @@ function App() {
           <section className="min-w-0 py-7 lg:px-9">
             <div className="mx-auto flex h-full max-w-3xl flex-col">
               <div>
-                <p className="eyebrow">Approved research</p>
+                <p className="eyebrow">MCP practice chat</p>
                 <h1 className="mt-3 max-w-xl text-3xl font-semibold tracking-[-0.04em] text-zinc-950 md:text-4xl">
-                  Test the MCP path against secured notes.
+                  Practice secure client/server AI loops.
                 </h1>
                 <p className="mt-3 max-w-[58ch] text-sm leading-6 text-zinc-600">
-                  The server retrieves evidence. The client performs local
-                  inference. Every answer must resolve to an approved source.
+                  Ideate and test MCP roots, sampling approvals, local inference,
+                  citation checks, and agent harness behavior in one local chat.
                 </p>
               </div>
 
@@ -400,54 +411,19 @@ function App() {
                 </label>
               </form>
 
-              {status === "idle" && (
-                <div className="mt-10 border-t border-zinc-300 pt-6">
-                  <p className="eyebrow">Evaluation prompts</p>
-                  <div className="mt-3 divide-y divide-zinc-300">
-                    {SUGGESTED_QUESTIONS.map((question) => (
-                      <button
-                        key={question}
-                        onClick={() => setQuery(question)}
-                        className="group flex w-full items-center justify-between gap-4 py-3 text-left text-sm text-zinc-600 transition-colors duration-150 hover:text-zinc-950 active:translate-y-px"
-                      >
-                        <span>{question}</span>
-                        <ArrowUp
-                          className="rotate-45 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                          size={15}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {approvalPending && (
-                <ApprovalCard
-                  onApprove={() => void decideSampling("approve")}
-                  onDeny={() => void decideSampling("deny")}
-                />
-              )}
-
-              {isRunning && <LoadingAnswer onCancel={cancelRun} />}
-
-              {error && (
-                <div className="mt-8 flex items-start gap-3 border-l-2 border-red-700 bg-red-50 px-4 py-3 text-sm text-red-900">
-                  <WarningCircle className="mt-0.5 shrink-0" size={18} />
-                  <div>
-                    <p className="font-medium">Run failed</p>
-                    <p className="mt-1 text-red-800">{error}</p>
-                  </div>
-                </div>
-              )}
-
-              {status === "cancelled" && (
-                <div className="mt-8 flex items-center gap-3 border-l-2 border-amber-700 px-4 py-3 text-sm text-zinc-700">
-                  <Prohibit size={18} />
-                  The run was cancelled. No answer was persisted.
-                </div>
-              )}
-
-              {result && <Answer result={result} />}
+              <ChatThread
+                activeQuestion={activeQuestion}
+                status={status}
+                result={result}
+                error={error}
+                approvalPending={approvalPending}
+                autoApproveSampling={autoApproveSampling}
+                onApproveOnce={() => void decideSampling("approve")}
+                onApproveAlways={() => void decideSampling("approve_always")}
+                onDeny={() => void decideSampling("deny")}
+                onCancel={cancelRun}
+                onPickQuestion={setQuery}
+              />
             </div>
           </section>
 
@@ -521,9 +497,149 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ChatThread({
+  activeQuestion,
+  status,
+  result,
+  error,
+  approvalPending,
+  autoApproveSampling,
+  onApproveOnce,
+  onApproveAlways,
+  onDeny,
+  onCancel,
+  onPickQuestion,
+}: {
+  activeQuestion: string;
+  status: RunStatus;
+  result: ResearchResult | null;
+  error: string;
+  approvalPending: boolean;
+  autoApproveSampling: boolean;
+  onApproveOnce: () => void;
+  onApproveAlways: () => void;
+  onDeny: () => void;
+  onCancel: () => void;
+  onPickQuestion: (question: string) => void;
+}) {
+  const idle = status === "idle" && !activeQuestion;
+  return (
+    <div className="mt-8 rounded-[1.35rem] border border-zinc-300 bg-stone-50/80 p-4 shadow-[0_18px_45px_-34px_rgba(39,39,42,0.35)] md:p-5">
+      {idle ? (
+        <div className="py-3">
+          <p className="eyebrow">Practice queue</p>
+          <p className="mt-3 max-w-[54ch] text-sm leading-6 text-zinc-600">
+            Start a chat turn to watch roots, retrieval, sampling approval,
+            inference, citation validation, and persisted audit events move across
+            the MCP boundary.
+          </p>
+          <div className="mt-5 divide-y divide-zinc-300">
+            {SUGGESTED_QUESTIONS.map((question) => (
+              <button
+                key={question}
+                onClick={() => onPickQuestion(question)}
+                className="group flex w-full items-center justify-between gap-4 py-3 text-left text-sm text-zinc-600 transition-colors duration-150 hover:text-zinc-950 active:translate-y-px"
+              >
+                <span>{question}</span>
+                <ArrowUp
+                  className="rotate-45 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                  size={15}
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {activeQuestion && (
+            <ChatBubble label="You" align="right">
+              <p className="whitespace-pre-wrap text-sm leading-6">{activeQuestion}</p>
+            </ChatBubble>
+          )}
+
+          <ChatBubble label="MCP host" align="left">
+            {approvalPending ? (
+              <ApprovalCard
+                onApproveOnce={onApproveOnce}
+                onApproveAlways={onApproveAlways}
+                onDeny={onDeny}
+              />
+            ) : autoApproveSampling && status === "running" ? (
+              <div className="space-y-5">
+                <div className="flex items-start gap-3 text-sm text-emerald-900">
+                  <CheckCircle className="mt-0.5 shrink-0" size={18} weight="fill" />
+                  <div>
+                    <p className="font-medium">Auto-approving sampling for this run</p>
+                    <p className="mt-1 leading-6 text-emerald-800">
+                      Future client-side sampling requests in this run will proceed
+                      without another prompt.
+                    </p>
+                  </div>
+                </div>
+                <LoadingAnswer onCancel={onCancel} />
+              </div>
+            ) : status === "running" ? (
+              <LoadingAnswer onCancel={onCancel} />
+            ) : status === "cancelled" ? (
+              <div className="flex items-center gap-3 text-sm text-zinc-700">
+                <Prohibit size={18} />
+                The run was cancelled. No answer was persisted.
+              </div>
+            ) : error ? (
+              <div className="flex items-start gap-3 text-sm text-red-900">
+                <WarningCircle className="mt-0.5 shrink-0" size={18} />
+                <div>
+                  <p className="font-medium">Run failed</p>
+                  <p className="mt-1 text-red-800">{error}</p>
+                </div>
+              </div>
+            ) : result ? (
+              <Answer result={result} />
+            ) : (
+              <p className="text-sm leading-6 text-zinc-500">
+                Waiting for the next MCP event.
+              </p>
+            )}
+          </ChatBubble>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChatBubble({
+  label,
+  align,
+  children,
+}: {
+  label: string;
+  align: "left" | "right";
+  children: React.ReactNode;
+}) {
+  const right = align === "right";
+  return (
+    <div className={`flex ${right ? "justify-end" : "justify-start"}`}>
+      <div className={`max-w-[88%] ${right ? "text-right" : "text-left"}`}>
+        <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+          {label}
+        </p>
+        <div
+          className={`rounded-2xl px-4 py-3 ${
+            right
+              ? "rounded-tr-sm bg-zinc-900 text-stone-50"
+              : "rounded-tl-sm border border-zinc-300 bg-white text-zinc-800"
+          }`}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LoadingAnswer({ onCancel }: { onCancel: () => void }) {
   return (
-    <div className="mt-9 animate-enter border-t border-zinc-300 pt-6">
+    <div className="animate-enter">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium">
           <CircleNotch className="animate-spin text-amber-700" size={17} />
@@ -547,24 +663,26 @@ function LoadingAnswer({ onCancel }: { onCancel: () => void }) {
 }
 
 function ApprovalCard({
-  onApprove,
+  onApproveOnce,
+  onApproveAlways,
   onDeny,
 }: {
-  onApprove: () => void;
+  onApproveOnce: () => void;
+  onApproveAlways: () => void;
   onDeny: () => void;
 }) {
   return (
-    <div className="mt-8 animate-enter border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-zinc-800">
-      <div className="flex items-start justify-between gap-4">
+    <div className="animate-enter text-sm text-zinc-800">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="font-medium text-amber-950">Sampling approval required</p>
           <p className="mt-1 leading-6 text-amber-900">
             The server retrieved evidence and is asking the client-side model to
-            produce a grounded answer. Raw prompts stay local and are not
-            persisted.
+            produce a grounded answer. Choose how this run should handle model
+            calls.
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <button
             onClick={onDeny}
             className="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-950 transition-colors duration-150 hover:bg-amber-100"
@@ -572,10 +690,16 @@ function ApprovalCard({
             Deny
           </button>
           <button
-            onClick={onApprove}
+            onClick={onApproveOnce}
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-800 transition-colors duration-150 hover:bg-zinc-100"
+          >
+            Allow once
+          </button>
+          <button
+            onClick={onApproveAlways}
             className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-stone-50 transition-colors duration-150 hover:bg-zinc-800"
           >
-            Approve
+            Always allow
           </button>
         </div>
       </div>
@@ -591,7 +715,7 @@ function Answer({ result }: { result: ResearchResult }) {
         ? "text-red-800"
         : "text-amber-800";
   return (
-    <article className="mt-9 animate-enter border-t border-zinc-300 pt-6">
+    <article className="animate-enter">
       <div className="flex items-center justify-between gap-4">
         <div className={`flex items-center gap-2 text-xs font-medium ${statusTone}`}>
           {result.citation_valid ? (
@@ -684,6 +808,7 @@ function TraceRow({
 }) {
   const isComplete = event.type === "result";
   const isError = event.type === "error";
+  const isCancelled = event.type === "cancelled" || event.level === "warning";
   return (
     <li
       className={`animate-trace grid grid-cols-[20px_1fr] gap-3 border-l pb-5 pl-4 last:pb-0 ${
@@ -696,6 +821,8 @@ function TraceRow({
           <CheckCircle className="text-emerald-700" size={14} weight="fill" />
         ) : isError ? (
           <WarningCircle className="text-red-700" size={14} />
+        ) : isCancelled ? (
+          <Prohibit className="text-amber-700" size={14} />
         ) : (
           <span className="size-1.5 rounded-full bg-zinc-500" />
         )}

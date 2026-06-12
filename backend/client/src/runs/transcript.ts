@@ -68,5 +68,8 @@ export function formatTerminalEvent(event: TranscriptEvent): string {
 
 function mirrorToTerminal(event: TranscriptEvent): void {
   if (process.env.TRANSCRIPT_TERMINAL === "0") return;
-  console.error(formatTerminalEvent(event));
+  const line = formatTerminalEvent(event);
+  if (event.level === "error") console.error(line);
+  else if (event.level === "warning") console.warn(line);
+  else console.log(line);
 }
