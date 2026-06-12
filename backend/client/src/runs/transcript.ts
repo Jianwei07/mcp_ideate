@@ -36,6 +36,7 @@ export class TranscriptRecorder {
     this.store.appendEvent(event);
     if (detail !== undefined) this.details.set(event.sequence, detail);
     await this.audit.append(event);
+    mirrorToTerminal(event);
     for (const listener of this.listeners) listener(event);
     return event;
   }
@@ -52,4 +53,20 @@ export class TranscriptRecorder {
   clearVolatileDetails(): void {
     this.details.clear();
   }
+}
+
+export function formatTerminalEvent(event: TranscriptEvent): string {
+  const method = event.method ? ` method=${event.method}` : "";
+  const requestId = event.requestId ? ` request=${event.requestId}` : "";
+  const duration = event.durationMs === null ? "" : ` duration=${event.durationMs}ms`;
+  const metadata =
+    Object.keys(event.metadata).length === 0
+      ? ""
+      : ` metadata=${JSON.stringify(event.metadata)}`;
+  return `[secure-research] run=${event.turnId} seq=${event.sequence} channel=${event.channel} origin=${event.origin} direction=${event.direction} kind=${event.kind}${method}${requestId} level=${event.level} status=${event.status}${duration} ${event.summary}${metadata}`;
+}
+
+function mirrorToTerminal(event: TranscriptEvent): void {
+  if (process.env.TRANSCRIPT_TERMINAL === "0") return;
+  console.error(formatTerminalEvent(event));
 }

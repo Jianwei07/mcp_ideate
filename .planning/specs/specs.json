@@ -1,0 +1,10 @@
+{
+  "todos": [
+    {
+      "id": "01",
+      "title": "Export backend services from uv to bun",
+      "spec": ".planning/specs/01-pivot-uv-to-bun",
+      "completed": true
+    }
+  ]
+}

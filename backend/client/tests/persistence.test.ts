@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { SessionStore } from "../src/persistence/store.ts";
 import { MetadataAudit } from "../src/runs/audit.ts";
-import { TranscriptRecorder } from "../src/runs/transcript.ts";
+import { formatTerminalEvent, TranscriptRecorder } from "../src/runs/transcript.ts";
 
 describe("session persistence", () => {
   test("session history and citations survive restart without protected excerpts", async () => {
@@ -144,5 +144,32 @@ describe("session persistence", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  test("terminal transcript formatter omits volatile details", () => {
+    const line = formatTerminalEvent({
+      id: "event-1",
+      turnId: "turn-1",
+      sequence: 1,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      channel: "mcp",
+      origin: "mcp-connection",
+      direction: "client_to_server",
+      kind: "request",
+      method: "tools/call",
+      requestId: "1",
+      parentRequestId: null,
+      level: "debug",
+      status: "running",
+      summary: "client_to_server tools/call",
+      durationMs: null,
+      metadata: { method: "tools/call" },
+      detailAvailable: true,
+    });
+
+    expect(line).toContain("run=turn-1");
+    expect(line).toContain("method=tools/call");
+    expect(line).toContain('metadata={"method":"tools/call"}');
+    expect(line).not.toContain("PROTECTED RAW PAYLOAD");
   });
 });

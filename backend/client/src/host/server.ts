@@ -295,6 +295,9 @@ function eventDetail(
 function cancelRun(runId: string, activeRuns: Map<string, ActiveRun>): Response {
   const run = activeRuns.get(runId);
   run?.controller.abort();
+  console.error(
+    `[secure-research] run=${runId} level=warning status=cancelled Run cancellation requested`,
+  );
   broadcast(activeRuns, runId, {
     sequence: 0,
     run_id: runId,
@@ -333,6 +336,7 @@ async function executeRun(
     config,
     ollama,
     thinkingRequested,
+    thinkingSupported: ollama.supportsThinking(),
     approveSampling: async ({ messageCount, signal }) => {
       store.updateTurn(runId, { status: "awaiting_approval" });
       await recorder.record({
@@ -372,16 +376,79 @@ async function executeRun(
       status: "running",
       summary: "Started approved research run",
       durationMs: null,
-      metadata: {},
+      metadata: {
+        thinkingRequested,
+        thinkingSupported: ollama.supportsThinking(),
+      },
+    });
+    await recorder.record({
+      channel: "application",
+      origin: "host",
+      direction: "internal",
+      kind: "route",
+      method: "mcp/connect",
+      requestId: null,
+      parentRequestId: null,
+      level: "info",
+      status: "running",
+      summary: "Connecting host to MCP server over stdio",
+      durationMs: null,
+      metadata: { serverEntry: config.serverEntry },
     });
     await connection.connect(signal);
+    await recorder.record({
+      channel: "application",
+      origin: "host",
+      direction: "internal",
+      kind: "route",
+      method: "tools/call",
+      requestId: null,
+      parentRequestId: null,
+      level: "info",
+      status: "running",
+      summary: "Routing research request to MCP server tool",
+      durationMs: null,
+      metadata: { tool: "research" },
+    });
     const result = await connection.callResearch(query, { signal });
+    await recorder.record({
+      channel: "application",
+      origin: "host",
+      direction: "internal",
+      kind: "run",
+      method: null,
+      requestId: null,
+      parentRequestId: null,
+      level: result.status === "error" ? "error" : "info",
+      status: result.status === "error" ? "error" : "complete",
+      summary: "Research run finished",
+      durationMs: Date.now() - startedAt,
+      metadata: {
+        resultStatus: result.status,
+        sourceCount: result.sources.length,
+        citationValid: result.citationValid,
+      },
+    });
     finishRun(runId, result, store, activeRuns, Date.now() - startedAt);
   } catch (error) {
     const run = activeRuns.get(runId);
     if (signal.aborted) {
       if (run?.timedOut) {
         const message = "The research run timed out before completing.";
+        await recorder.record({
+          channel: "application",
+          origin: "host",
+          direction: "internal",
+          kind: "run",
+          method: null,
+          requestId: null,
+          parentRequestId: null,
+          level: "error",
+          status: "error",
+          summary: message,
+          durationMs: Date.now() - startedAt,
+          metadata: { code: "RUN_TIMEOUT" },
+        });
         store.updateTurn(runId, {
           status: "error",
           errorCode: "RUN_TIMEOUT",
@@ -406,6 +473,20 @@ async function executeRun(
     const correlationId = crypto.randomUUID();
     const apiError = classifyError(error, correlationId);
     printCauseChain(error, correlationId);
+    await recorder.record({
+      channel: "application",
+      origin: "host",
+      direction: "internal",
+      kind: "run",
+      method: null,
+      requestId: null,
+      parentRequestId: null,
+      level: "error",
+      status: "error",
+      summary: apiError.message,
+      durationMs: Date.now() - startedAt,
+      metadata: { code: apiError.code, stage: apiError.stage, correlationId },
+    });
     store.updateTurn(runId, {
       status: "error",
       errorCode: apiError.code,

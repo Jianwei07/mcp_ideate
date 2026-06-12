@@ -36,6 +36,7 @@ export type McpConnectionOptions = {
   cacheRootPath?: string;
   ollama: Pick<OllamaAdapter, "model" | "sample">;
   thinkingRequested?: boolean;
+  thinkingSupported?: boolean;
   approveSampling?: (request: {
     messageCount: number;
     signal?: AbortSignal;
@@ -159,6 +160,26 @@ export class McpConnection {
     this.client.setRequestHandler(
       CreateMessageRequestSchema,
       async (request, extra): Promise<CreateMessageResult> => {
+        await this.emit({
+          channel: "model",
+          origin: "mcp-server",
+          direction: "server_to_client",
+          kind: "sampling",
+          method: request.method,
+          requestId: null,
+          parentRequestId: null,
+          level: "info",
+          status: "pending",
+          summary: "MCP server requested client-side sampling",
+          durationMs: null,
+          metadata: {
+            messageCount: request.params.messages.length,
+            maxTokens: request.params.maxTokens,
+            temperature: request.params.temperature,
+            thinkingRequested: this.options.thinkingRequested ?? false,
+            thinkingSupported: this.options.thinkingSupported ?? false,
+          },
+        });
         const decision = await this.options.approveSampling?.({
           messageCount: request.params.messages.length,
           signal: extra.signal,
@@ -192,7 +213,12 @@ export class McpConnection {
           status: "running",
           summary: "Running approved client-side sampling",
           durationMs: null,
-          metadata: { messageCount: request.params.messages.length },
+          metadata: {
+            messageCount: request.params.messages.length,
+            model: this.options.ollama.model,
+            thinkingRequested: this.options.thinkingRequested ?? false,
+            thinkingSupported: this.options.thinkingSupported ?? false,
+          },
         });
         const sample = await this.options.ollama.sample(
           {
@@ -207,6 +233,11 @@ export class McpConnection {
           this.options.thinkingRequested ?? false,
           extra.signal,
         );
+        if (sample.thinking) {
+          console.error(
+            `[secure-research] raw_ollama_thinking model=${this.options.ollama.model}\n${sample.thinking}`,
+          );
+        }
         await this.emit({
           channel: "model",
           origin: "ollama",
@@ -222,6 +253,7 @@ export class McpConnection {
           metadata: {
             promptTokens: sample.usage.promptTokens,
             outputTokens: sample.usage.outputTokens,
+            thinkingReturned: sample.thinking !== null,
           },
         });
         return {
