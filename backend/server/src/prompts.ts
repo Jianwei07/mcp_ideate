@@ -31,3 +31,18 @@ Produce a JSON object with:
 - answer: a direct response with claim-level [S#] markers
 - rationale: at most two sentences describing which evidence supports the answer`;
 }
+
+export function citationRepairPrompt(
+  query: string,
+  sources: SourceChunk[],
+  answer: string,
+): string {
+  return `${researchPrompt(query, sources)}
+
+Previous answer failed citation validation because it did not cite every factual claim with one of the provided [S#] markers.
+
+Previous answer:
+${answer}
+
+Rewrite the answer as valid JSON. Every sentence in answer must include at least one valid source marker from the approved evidence, such as [S1]. Do not cite sources that are not listed above.`;
+}

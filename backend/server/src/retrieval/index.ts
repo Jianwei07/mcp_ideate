@@ -4,6 +4,7 @@ const TOKEN_RE = /[a-z0-9][a-z0-9+#.-]*/gi;
 const STOP_WORDS = new Set([
   "a",
   "an",
+  "about",
   "and",
   "are",
   "as",
@@ -16,11 +17,14 @@ const STOP_WORDS = new Set([
   "in",
   "is",
   "it",
+  "me",
+  "more",
   "of",
   "on",
   "or",
   "that",
   "the",
+  "tell",
   "to",
   "what",
   "when",
@@ -93,6 +97,10 @@ export function rankChunks(
 ): SourceChunk[] {
   const queryTerms = tokenize(query);
   if (queryTerms.length === 0 || chunks.length === 0) return [];
+  const latestLecture = latestLectureNumber(chunks);
+  const wantsLatestLecture =
+    /\b(latest|recent|newest)\b/i.test(query) &&
+    /\b(lecture|lesson|class)\b/i.test(query);
 
   const documentTerms = chunks.map((chunk) => new Set(tokenize(chunk.text)));
   const documentFrequency = new Map<string, number>();
@@ -119,6 +127,8 @@ export function rankChunks(
 
     const haystack = tokenize(`${chunk.headingPath.join(" ")} ${chunk.text}`).join(" ");
     if (queryTerms.length > 1 && haystack.includes(phrase)) score += 4;
+    if (wantsLatestLecture && lectureNumber(chunk.pageTitle) === latestLecture)
+      score += 6;
     const normalized = score / Math.max(new Set(queryTerms).size, 1);
     return normalized >= minimumScore
       ? [{ ...chunk, score: Number(normalized.toFixed(4)), _index: index }]
@@ -137,6 +147,20 @@ export function rankChunks(
     ...chunk,
     sourceId: `S${index + 1}`,
   }));
+}
+
+function latestLectureNumber(chunks: SourceChunk[]): number | null {
+  let latest: number | null = null;
+  for (const chunk of chunks) {
+    const current = lectureNumber(chunk.pageTitle);
+    if (current !== null && (latest === null || current > latest)) latest = current;
+  }
+  return latest;
+}
+
+function lectureNumber(title: string): number | null {
+  const match = title.match(/\b(?:l|lecture)\s*0*(\d+)\b/i);
+  return match ? Number.parseInt(match[1], 10) : null;
 }
 
 function counts(tokens: string[]): Map<string, number> {

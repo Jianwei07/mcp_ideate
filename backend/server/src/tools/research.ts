@@ -8,7 +8,7 @@ import { z } from "zod";
 import { loadCachedPages, saveCachedPages } from "../cache.ts";
 import type { ServerConfig } from "../config.ts";
 import { NotionAdapter } from "../notion/client.ts";
-import { SYSTEM_PROMPT, researchPrompt } from "../prompts.ts";
+import { SYSTEM_PROMPT, citationRepairPrompt, researchPrompt } from "../prompts.ts";
 import { citationSources, validateCitations } from "../retrieval/citations.ts";
 import { chunkPages, rankChunks } from "../retrieval/index.ts";
 import { selectCacheRoot } from "../security/roots.ts";
@@ -103,29 +103,7 @@ export function registerResearchTool(mcp: McpServer, config: ServerConfig): void
           sourceCount: selected.length,
         });
         await progress(extra, 65, "Waiting for sampling approval");
-        const sampledResult = await mcp.server.createMessage(
-          {
-            messages: [
-              {
-                role: "user",
-                content: {
-                  type: "text",
-                  text: researchPrompt(query, selected),
-                },
-              },
-            ],
-            maxTokens: 1800,
-            systemPrompt: SYSTEM_PROMPT,
-            temperature: 0.1,
-          },
-          { signal: extra.signal },
-        );
-        if (sampledResult.content.type !== "text") {
-          throw new Error("Client sampling returned non-text content");
-        }
-        const sampled = sampledAnswerSchema.parse(
-          JSON.parse(sampledResult.content.text),
-        );
+        let sampled = await sampleAnswer(mcp, extra, researchPrompt(query, selected));
 
         if (sampled.status === "insufficient_evidence") {
           await progress(extra, 100, "Model found insufficient evidence");
@@ -139,7 +117,29 @@ export function registerResearchTool(mcp: McpServer, config: ServerConfig): void
           });
         }
 
-        const validation = validateCitations(sampled.answer, selected);
+        let validation = validateCitations(sampled.answer, selected);
+        if (!validation.valid) {
+          await log(mcp, "warning", "validation", "Repairing missing citations", {
+            citedSourceIds: validation.citedSourceIds,
+          });
+          sampled = await sampleAnswer(
+            mcp,
+            extra,
+            citationRepairPrompt(query, selected, sampled.answer),
+          );
+          if (sampled.status === "insufficient_evidence") {
+            await progress(extra, 100, "Model found insufficient evidence");
+            return toolResult({
+              status: "insufficient_evidence",
+              answer: sampled.answer,
+              rationale: sampled.rationale,
+              sources,
+              citedSourceIds: [],
+              citationValid: true,
+            });
+          }
+          validation = validateCitations(sampled.answer, selected);
+        }
         await log(mcp, "info", "validation", "Citation validation complete", {
           citationValid: validation.valid,
           citedSourceIds: validation.citedSourceIds,
@@ -178,6 +178,34 @@ export function registerResearchTool(mcp: McpServer, config: ServerConfig): void
       }
     },
   );
+}
+
+async function sampleAnswer(
+  mcp: McpServer,
+  extra: { signal?: AbortSignal },
+  prompt: string,
+) {
+  const sampledResult = await mcp.server.createMessage(
+    {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: prompt,
+          },
+        },
+      ],
+      maxTokens: 1800,
+      systemPrompt: SYSTEM_PROMPT,
+      temperature: 0.1,
+    },
+    { signal: extra.signal },
+  );
+  if (sampledResult.content.type !== "text") {
+    throw new Error("Client sampling returned non-text content");
+  }
+  return sampledAnswerSchema.parse(JSON.parse(sampledResult.content.text));
 }
 
 function toolResult(result: ResearchResult) {

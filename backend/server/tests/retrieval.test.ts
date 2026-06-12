@@ -33,6 +33,42 @@ describe("secure retrieval", () => {
     expect(selected[0].headingPath).toEqual(["Monitoring signals"]);
   });
 
+  test("prioritizes highest numbered lecture for latest lecture queries", () => {
+    const selected = rankChunks(
+      "tell me more about latest lecture",
+      chunkPages([
+        {
+          pageId: "l06",
+          title: "L06: AI Project Strategy",
+          url: "https://notion.example/l06",
+          blocks: [
+            {
+              blockId: "l06-body",
+              blockType: "paragraph",
+              text: "This lecture covers project strategy and data collection.",
+              headingLevel: null,
+            },
+          ],
+        },
+        {
+          pageId: "l10",
+          title: "Lecture 10: What’s Going On Inside My Model?",
+          url: "https://notion.example/l10",
+          blocks: [
+            {
+              blockId: "l10-body",
+              blockType: "paragraph",
+              text: "Saliency maps and occlusion sensitivity explain model behavior.",
+              headingLevel: null,
+            },
+          ],
+        },
+      ]),
+    );
+
+    expect(selected[0].pageTitle).toBe("Lecture 10: What’s Going On Inside My Model?");
+  });
+
   test("requires claim-level citations from the selected evidence", () => {
     expect(
       validateCitations("Teams should monitor loss [S1].", [
