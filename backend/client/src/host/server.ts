@@ -1,4 +1,5 @@
 import {
+  type ApiError,
   createTurnSchema,
   isTrivialGreetingQuery,
   type ResearchResult,
@@ -29,7 +30,10 @@ type StreamClient = {
 
 type HostOptions = {
   preflight?: boolean;
+  runExecutor?: RunExecutor;
 };
+
+type RunExecutor = typeof executeRun;
 
 const RUN_TIMEOUT_MS = 60_000;
 const SSE_HEARTBEAT_MS = 5_000;
@@ -91,7 +95,16 @@ export function createHost(
       }
 
       if (url.pathname === "/api/runs" && request.method === "POST") {
-        return startRun(request, config, store, audit, ollama, approvals, activeRuns);
+        return startRun(
+          request,
+          config,
+          store,
+          audit,
+          ollama,
+          approvals,
+          activeRuns,
+          options,
+        );
       }
 
       const approvalMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/sampling$/);
@@ -142,9 +155,21 @@ async function startRun(
   ollama: OllamaAdapter,
   approvals: SamplingApprovalBroker,
   activeRuns: Map<string, ActiveRun>,
+  options: HostOptions,
 ): Promise<Response> {
   const correlationId = crypto.randomUUID();
   try {
+    if (activeRuns.size > 0) {
+      return apiErrorResponse({
+        code: "RUN_ALREADY_ACTIVE",
+        message:
+          "A local research run is already active. Wait for it to finish before starting another.",
+        stage: "host",
+        retryable: true,
+        correlationId,
+        httpStatus: 409,
+      });
+    }
     const input = createTurnSchema.parse(await request.json());
     if (isTrivialGreetingQuery(input.query)) {
       return Response.json(
@@ -180,7 +205,7 @@ async function startRun(
     };
     activeRuns.set(turn.id, activeRun);
 
-    void executeRun(
+    void (options.runExecutor ?? executeRun)(
       turn.id,
       input.query,
       input.thinking,
@@ -467,6 +492,21 @@ async function executeRun(
         });
         return;
       }
+      const message = "The run was cancelled.";
+      await recorder.record({
+        channel: "application",
+        origin: "host",
+        direction: "internal",
+        kind: "run",
+        method: null,
+        requestId: null,
+        parentRequestId: null,
+        level: "warning",
+        status: "cancelled",
+        summary: message,
+        durationMs: Date.now() - startedAt,
+        metadata: {},
+      });
       store.updateTurn(runId, { status: "cancelled" });
       return;
     }
@@ -614,4 +654,8 @@ function toFrontendResult(result: ResearchResult) {
     cited_source_ids: result.citedSourceIds,
     citation_valid: result.citationValid,
   };
+}
+
+function apiErrorResponse(error: ApiError): Response {
+  return Response.json(error, { status: error.httpStatus });
 }

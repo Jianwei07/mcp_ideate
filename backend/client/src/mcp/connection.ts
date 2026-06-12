@@ -48,7 +48,6 @@ export type McpConnectionOptions = {
 export class McpConnection {
   private readonly client: Client;
   private readonly transport: Transport;
-  private connected = false;
 
   constructor(private readonly options: McpConnectionOptions) {
     this.client = new Client(
@@ -80,12 +79,9 @@ export class McpConnection {
   async connect(signal?: AbortSignal): Promise<void> {
     await mkdir(this.cacheRootPath(), { recursive: true });
     await this.client.connect(this.transport, { signal });
-    this.connected = true;
   }
 
   async close(): Promise<void> {
-    if (!this.connected) return;
-    this.connected = false;
     await this.transport.close();
   }
 
@@ -321,9 +317,17 @@ function createStdioTransport(
   return new StdioClientTransport({
     command: "bun",
     args: [config.serverEntry],
-    env: process.env as Record<string, string>,
+    env: definedEnv(process.env),
     stderr: "inherit",
   });
+}
+
+function definedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => {
+      return typeof entry[1] === "string";
+    }),
+  );
 }
 
 function loggingEvent(notification: LoggingMessageNotification): McpConnectionEvent {

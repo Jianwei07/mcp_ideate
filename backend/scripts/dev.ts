@@ -89,7 +89,14 @@ class DevSupervisor {
 
   private watchSources(): void {
     for (const directory of ["client/src", "server/src", "contracts/src"]) {
-      watch(directory, { recursive: true }, () => void this.restartHost());
+      try {
+        watch(directory, { recursive: true }, () => void this.restartHost());
+      } catch {
+        console.warn(
+          `Recursive watch unavailable for ${directory}; watching top-level changes only.`,
+        );
+        watch(directory, () => void this.restartHost());
+      }
     }
   }
 

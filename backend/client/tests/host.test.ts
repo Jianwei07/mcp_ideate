@@ -103,6 +103,61 @@ describe("host API", () => {
     expect(events).toContain("Completed persisted run");
     expect(events).toContain('"run_id":"');
   });
+
+  test("rejects overlapping active runs", async () => {
+    const config = testConfig();
+    const server = createHost(config, {
+      preflight: false,
+      runExecutor: async (
+        runId,
+        _query,
+        _thinking,
+        _config,
+        store,
+        _audit,
+        _ollama,
+        _approvals,
+        signal,
+        activeRuns,
+      ) => {
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        store.updateTurn(runId, { status: "cancelled" });
+        const run = activeRuns.get(runId);
+        if (run) clearTimeout(run.timeout);
+        activeRuns.delete(runId);
+      },
+    });
+    servers.push(server);
+    const baseUrl = `http://${server.hostname}:${server.port}`;
+
+    const first = await fetch(`${baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "What should teams monitor?" }),
+    });
+    const started = (await first.json()) as { run_id: string };
+    const second = await fetch(`${baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "What should teams monitor next?" }),
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(409);
+    await expect(second.json()).resolves.toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      stage: "host",
+      retryable: true,
+      httpStatus: 409,
+    });
+    await fetch(`${baseUrl}/api/runs/${started.run_id}`, { method: "DELETE" });
+
+    await waitFor(async () => {
+      return (await hostTurnStatus(baseUrl, started.run_id)) === "cancelled";
+    });
+  });
 });
 
 function testConfig(): ClientConfig {
@@ -121,4 +176,26 @@ function testConfig(): ClientConfig {
     serverEntry: join(directory, "server.ts"),
     serverEnvFile: null,
   };
+}
+
+async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (await predicate()) return;
+    await Bun.sleep(20);
+  }
+  throw new Error("Timed out waiting for condition");
+}
+
+async function hostTurnStatus(baseUrl: string, turnId: string): Promise<string | null> {
+  const sessions = (await (await fetch(`${baseUrl}/api/sessions`)).json()) as {
+    sessions: Array<{ id: string }>;
+  };
+  for (const session of sessions.sessions) {
+    const restored = (await (
+      await fetch(`${baseUrl}/api/sessions/${session.id}`)
+    ).json()) as { session: { turns?: Array<{ id: string; status: string }> } };
+    const turn = restored.session.turns?.find((item) => item.id === turnId);
+    if (turn) return turn.status;
+  }
+  return null;
 }
