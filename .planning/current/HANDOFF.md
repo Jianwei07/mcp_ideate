@@ -74,6 +74,14 @@ observable MCP foundation that can later expand into AI Ops incident triage.
   - repair prompt receives safe validation diagnostics;
   - final progress text now distinguishes citation pass from withheld response;
   - host persists citation failure as `CITATION_VALIDATION_FAILED` domain error.
+- Completed Notion MCP-style read tool session
+  `.planning/specs/03-notion-mcp-style-tools/`:
+  - new contracts for Notion search/fetch, knowledge search, and safe status;
+  - Notion adapter supports `/v1/search` and `/v1/pages/{page_id}/markdown`;
+  - MCP server exposes `notion_search`, `notion_fetch`, `knowledge_search`, and
+    `knowledge_status` alongside `research`;
+  - `research` now prefers Notion search/fetch evidence before legacy root-cache
+    fallback.
 
 ## Verified
 
@@ -100,6 +108,10 @@ observable MCP foundation that can later expand into AI Ops incident triage.
   citation hardening: 25 tests.
 - `cd backend && bun run check` passes after citation hardening: lint, format,
   typecheck, 25 tests, and frontend build.
+- `cd backend && bun test client/tests/mcp-connection.test.ts` passes after
+  Notion MCP-style read tools: 9 tests.
+- `cd backend && bun run check` passes after Notion MCP-style read tools: lint,
+  format, typecheck, 31 tests, and frontend build.
 
 ## Next Implementation Order
 

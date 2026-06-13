@@ -9,10 +9,12 @@ implementation lives in `client/`, `server/`, `contracts/`, `db/`, and
 A localhost research console demonstrating MCP sampling, logging, progress,
 roots, and cancellation against an allowlisted Notion knowledge base.
 
-The MCP server retrieves and ranks approved CS230 notes. It cannot call an LLM.
-Instead, it sends the question and selected evidence back to the MCP client with
-`sampling/createMessage`. The client calls the configured local Ollama model and
-returns structured output for server-side citation validation.
+The MCP server exposes Notion-style read tools over the approved workspace. It
+can search pages, fetch page markdown, and return citation-ready evidence. It
+cannot call an LLM. For answer synthesis, it sends the question and selected
+evidence back to the MCP client with `sampling/createMessage`. The client calls
+the configured local Ollama model and returns structured output for server-side
+citation validation.
 
 ## Security boundary
 
@@ -86,12 +88,24 @@ directory; Vite proxies `/api` to the backend on port 8000.
 Browser
   -> Bun host/client
   -> research(query) over stdio
-  -> MCP server fetches allowlisted Notion pages
+  -> MCP server searches/fetches approved Notion pages
   -> server requests sampling/createMessage
   -> MCP client calls local Ollama
   -> server validates citations
   -> Bun host streams trace and result events over SSE
 ```
+
+## MCP tools
+
+- `notion_search`: searches read-only Notion pages shared with the integration.
+- `notion_fetch`: fetches one Notion page as enhanced markdown by page ID or URL.
+- `knowledge_search`: searches Notion-backed knowledge and returns cited chunks.
+- `knowledge_status`: returns safe corpus metadata without protected excerpts.
+- `research`: convenience tool that composes search, fetch, sampling, and citation
+  validation for the chat UI.
+
+The shape follows Notion MCP's search/fetch pattern while keeping this POC's
+local host, sampling approval, and fail-closed citation checks.
 
 ## Tests
 

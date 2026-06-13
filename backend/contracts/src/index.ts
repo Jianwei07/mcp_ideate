@@ -24,6 +24,47 @@ export const researchResultSchema = z.object({
 
 export type ResearchResult = z.infer<typeof researchResultSchema>;
 
+export const notionSearchResultSchema = z.object({
+  object: z.literal("page"),
+  pageId: z.string(),
+  title: z.string(),
+  url: z.string().url(),
+});
+
+export type NotionSearchResult = z.infer<typeof notionSearchResultSchema>;
+
+export const notionSearchResponseSchema = z.object({
+  results: z.array(notionSearchResultSchema),
+});
+
+export type NotionSearchResponse = z.infer<typeof notionSearchResponseSchema>;
+
+export const notionPageFetchResultSchema = z.object({
+  pageId: z.string(),
+  title: z.string(),
+  url: z.string().url(),
+  markdown: z.string(),
+  truncated: z.boolean(),
+  unknownBlockIds: z.array(z.string()),
+});
+
+export type NotionPageFetchResult = z.infer<typeof notionPageFetchResultSchema>;
+
+export const knowledgeSearchResultSchema = z.object({
+  sources: z.array(citationSourceSchema),
+});
+
+export type KnowledgeSearchResult = z.infer<typeof knowledgeSearchResultSchema>;
+
+export const knowledgeStatusResultSchema = z.object({
+  cacheHit: z.boolean(),
+  pageCount: z.number().int().nonnegative(),
+  titles: z.array(z.string()),
+  notionVersion: z.string(),
+});
+
+export type KnowledgeStatusResult = z.infer<typeof knowledgeStatusResultSchema>;
+
 export const transcriptChannelSchema = z.enum(["application", "mcp", "model"]);
 export const transcriptLevelSchema = z.enum(["debug", "info", "warning", "error"]);
 export const transcriptStatusSchema = z.enum([

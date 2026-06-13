@@ -313,6 +313,32 @@ function fakeNotionServer(): Bun.Server<undefined> {
           },
         });
       }
+      if (url.pathname === "/v1/search") {
+        return Response.json({
+          has_more: false,
+          next_cursor: null,
+          results: [
+            {
+              object: "page",
+              id: "rootpage",
+              url: "https://notion.example/rootpage",
+              properties: {
+                title: { type: "title", title: [{ plain_text: "Monitoring" }] },
+              },
+            },
+          ],
+        });
+      }
+      if (url.pathname === "/v1/pages/rootpage/markdown") {
+        return Response.json({
+          object: "page_markdown",
+          id: "rootpage",
+          markdown:
+            "# Monitoring\n\nMonitor data quality, loss, and model performance.",
+          truncated: false,
+          unknown_block_ids: [],
+        });
+      }
       if (url.pathname === "/v1/blocks/rootpage/children") {
         return Response.json({
           has_more: false,

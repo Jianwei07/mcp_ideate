@@ -168,6 +168,135 @@ describe("McpConnection", () => {
       },
     );
   });
+
+  test("sends evidence from the requested explicit lecture", async () => {
+    await withRealStdioConnection(
+      [fakeSample("Lecture 5 covers error analysis [S1].")],
+      async (connection, _events, samples) => {
+        const result = await connection.callResearch("Tell me more about Lecture 5");
+        const prompt = samplingPrompt(samples[0]);
+
+        expect(result.status).toBe("answered");
+        expect(result.sources.map((source) => source.pageTitle)).toEqual([
+          "Lecture 5: Error Analysis",
+        ]);
+        expect(prompt).toContain("Page: Lecture 5: Error Analysis");
+        expect(prompt).not.toContain(
+          "Page: Lecture 10: What’s Going On Inside My Model?",
+        );
+      },
+      {
+        pages: [
+          {
+            id: "l10",
+            title: "Lecture 10: What’s Going On Inside My Model?",
+            text: "Saliency maps and occlusion sensitivity explain model behavior.",
+          },
+          {
+            id: "l05",
+            title: "Lecture 5: Error Analysis",
+            text: "Error analysis helps teams inspect mislabeled examples and model failures.",
+          },
+        ],
+      },
+    );
+  });
+
+  test("exposes Notion-style search and fetch tools", async () => {
+    await withRealStdioConnection(
+      [fakeSample()],
+      async (connection) => {
+        const search = await connection.callNotionSearch("lecture", 5);
+
+        expect(search.results.map((page) => page.title)).toEqual([
+          "Lecture 2: Bias and Variance",
+          "Lecture 5: Error Analysis",
+        ]);
+
+        const fetched = await connection.callNotionFetch(search.results[0].pageId);
+
+        expect(fetched.title).toBe("Lecture 2: Bias and Variance");
+        expect(fetched.markdown).toContain("Bias and variance");
+      },
+      {
+        pages: [
+          {
+            id: "l02",
+            title: "Lecture 2: Bias and Variance",
+            text: "Bias and variance help diagnose model errors.",
+          },
+          {
+            id: "l05",
+            title: "Lecture 5: Error Analysis",
+            text: "Error analysis inspects mislabeled examples.",
+          },
+        ],
+      },
+    );
+  });
+
+  test("searches knowledge through Notion markdown", async () => {
+    await withRealStdioConnection(
+      [fakeSample()],
+      async (connection) => {
+        const result = await connection.callKnowledgeSearch("Tell me about lecture 2");
+
+        expect(result.sources).toHaveLength(1);
+        expect(result.sources[0].pageTitle).toBe("Lecture 2: Bias and Variance");
+        expect(result.sources[0].excerpt).toContain("Bias and variance");
+      },
+      {
+        pages: [
+          {
+            id: "l02",
+            title: "Lecture 2: Bias and Variance",
+            text: "Bias and variance help diagnose model errors.",
+          },
+          {
+            id: "l05",
+            title: "Lecture 5: Error Analysis",
+            text: "Error analysis inspects mislabeled examples.",
+          },
+        ],
+      },
+    );
+  });
+
+  test("answers explicit lecture queries through Notion search", async () => {
+    await withRealStdioConnection(
+      [fakeSample("Lecture 2 explains bias and variance [S1].")],
+      async (connection, _events, samples) => {
+        const result = await connection.callResearch("Tell me more about lecture 2");
+        const prompt = samplingPrompt(samples[0]);
+
+        expect(result.status).toBe("answered");
+        expect(result.sources.map((source) => source.pageTitle)).toEqual([
+          "Lecture 2: Bias and Variance",
+        ]);
+        expect(prompt).toContain("Page: Lecture 2: Bias and Variance");
+        expect(prompt).not.toContain("Lecture 5: Error Analysis");
+      },
+      {
+        pages: [
+          {
+            id: "rootpage",
+            title: "Monitoring",
+            text: "Monitor data quality, loss, and model performance.",
+          },
+          {
+            id: "l02",
+            title: "Lecture 2: Bias and Variance",
+            text: "Bias and variance help diagnose model errors.",
+          },
+          {
+            id: "l05",
+            title: "Lecture 5: Error Analysis",
+            text: "Error analysis inspects mislabeled examples.",
+          },
+        ],
+      },
+    );
+  });
 });
 
 class FakeServerTransport implements Transport {
@@ -336,9 +465,10 @@ async function withRealStdioConnection(
     events: McpConnectionEvent[],
     samples: unknown[],
   ) => Promise<void>,
+  options: { pages?: FakeNotionPage[] } = {},
 ): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "secure-research-stdio-"));
-  const notion = fakeNotionServer();
+  const notion = fakeNotionServer(options.pages);
   const previousEnv = {
     NOTION_TOKEN: process.env.NOTION_TOKEN,
     NOTION_ROOT_PAGE_ID: process.env.NOTION_ROOT_PAGE_ID,
@@ -387,11 +517,38 @@ async function withRealStdioConnection(
   }
 }
 
-function fakeNotionServer(): Bun.Server<undefined> {
+type FakeNotionPage = { id: string; title: string; text: string };
+
+function fakeNotionServer(
+  pages: FakeNotionPage[] = [
+    {
+      id: "rootpage",
+      title: "Monitoring",
+      text: "Monitor data quality, loss, and model performance.",
+    },
+  ],
+): Bun.Server<undefined> {
   return Bun.serve({
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
+      const pageId = url.pathname.match(/^\/v1\/pages\/([^/]+)$/)?.[1];
+      const markdownPageId = url.pathname.match(
+        /^\/v1\/pages\/([^/]+)\/markdown$/,
+      )?.[1];
+      const blockId = url.pathname.match(/^\/v1\/blocks\/([^/]+)\/children$/)?.[1];
+      const page = pages.find(
+        (item) => item.id === (pageId ?? markdownPageId ?? blockId),
+      );
+      if (url.pathname === "/v1/search") {
+        return Response.json({
+          has_more: false,
+          next_cursor: null,
+          results: pages
+            .filter((item) => item.id !== "rootpage")
+            .map((item) => pagePayload(item)),
+        });
+      }
       if (url.pathname === "/v1/pages/rootpage") {
         return Response.json({
           id: "rootpage",
@@ -402,6 +559,21 @@ function fakeNotionServer(): Bun.Server<undefined> {
               title: [{ plain_text: "Monitoring" }],
             },
           },
+        });
+      }
+      if (
+        url.pathname === "/v1/blocks/rootpage/children" &&
+        pages[0]?.id !== "rootpage"
+      ) {
+        return Response.json({
+          has_more: false,
+          next_cursor: null,
+          results: pages.map((item) => ({
+            id: item.id,
+            type: "child_page",
+            has_children: false,
+            child_page: { title: item.title },
+          })),
         });
       }
       if (url.pathname === "/v1/blocks/rootpage/children") {
@@ -428,9 +600,56 @@ function fakeNotionServer(): Bun.Server<undefined> {
           ],
         });
       }
+      if (page && url.pathname === `/v1/pages/${page.id}`) {
+        return Response.json(pagePayload(page));
+      }
+      if (page && url.pathname === `/v1/pages/${page.id}/markdown`) {
+        return Response.json({
+          object: "page_markdown",
+          id: page.id,
+          markdown: `# ${page.title}\n\n${page.text}`,
+          truncated: false,
+          unknown_block_ids: [],
+        });
+      }
+      if (page && url.pathname === `/v1/blocks/${page.id}/children`) {
+        return Response.json({
+          has_more: false,
+          next_cursor: null,
+          results: [
+            {
+              id: `${page.id}-body`,
+              type: "paragraph",
+              has_children: false,
+              paragraph: { rich_text: [{ plain_text: page.text }] },
+            },
+          ],
+        });
+      }
       return Response.json({ error: "not_found" }, { status: 404 });
     },
   });
+}
+
+function pagePayload(page: FakeNotionPage) {
+  return {
+    object: "page",
+    id: page.id,
+    url: `https://notion.example/${page.id}`,
+    properties: {
+      title: {
+        type: "title",
+        title: [{ plain_text: page.title }],
+      },
+    },
+  };
+}
+
+function samplingPrompt(sample: unknown): string {
+  const params = sample as { messages?: Array<{ content?: { text?: string } }> };
+  return (
+    params.messages?.map((message) => message.content?.text ?? "").join("\n") ?? ""
+  );
 }
 
 function restoreEnv(previous: Record<string, string | undefined>): void {

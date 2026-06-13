@@ -2,7 +2,15 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  knowledgeSearchResultSchema,
+  knowledgeStatusResultSchema,
+  notionPageFetchResultSchema,
+  notionSearchResponseSchema,
   researchResultSchema,
+  type KnowledgeSearchResult,
+  type KnowledgeStatusResult,
+  type NotionPageFetchResult,
+  type NotionSearchResponse,
   type ResearchResult,
   type TranscriptEvent,
 } from "@secure-research/contracts";
@@ -124,6 +132,62 @@ export class McpConnection {
     }
     const text = "content" in result ? firstText(result.content) : null;
     return researchResultSchema.parse(JSON.parse(text ?? ""));
+  }
+
+  async callNotionSearch(
+    query: string,
+    limit = 10,
+    options: Pick<RequestOptions, "signal"> = {},
+  ): Promise<NotionSearchResponse> {
+    return notionSearchResponseSchema.parse(
+      await this.callStructuredTool("notion_search", { query, limit }, options),
+    );
+  }
+
+  async callNotionFetch(
+    page: string,
+    options: Pick<RequestOptions, "signal"> = {},
+  ): Promise<NotionPageFetchResult> {
+    return notionPageFetchResultSchema.parse(
+      await this.callStructuredTool("notion_fetch", { page }, options),
+    );
+  }
+
+  async callKnowledgeSearch(
+    query: string,
+    options: Pick<RequestOptions, "signal"> = {},
+  ): Promise<KnowledgeSearchResult> {
+    return knowledgeSearchResultSchema.parse(
+      await this.callStructuredTool("knowledge_search", { query }, options),
+    );
+  }
+
+  async callKnowledgeStatus(
+    options: Pick<RequestOptions, "signal"> = {},
+  ): Promise<KnowledgeStatusResult> {
+    return knowledgeStatusResultSchema.parse(
+      await this.callStructuredTool("knowledge_status", {}, options),
+    );
+  }
+
+  private async callStructuredTool(
+    name: string,
+    args: Record<string, unknown>,
+    options: Pick<RequestOptions, "signal">,
+  ): Promise<unknown> {
+    const result = await this.client.callTool(
+      { name, arguments: args },
+      CallToolResultSchema,
+      options,
+    );
+    if ("isError" in result && result.isError) {
+      throw new Error(firstText(result.content) ?? "The MCP server returned an error.");
+    }
+    if ("structuredContent" in result && result.structuredContent) {
+      return result.structuredContent;
+    }
+    const text = "content" in result ? firstText(result.content) : null;
+    return JSON.parse(text ?? "");
   }
 
   private registerHandlers(): void {

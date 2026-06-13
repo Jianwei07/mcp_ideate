@@ -5,9 +5,8 @@ import {
 } from "@secure-research/contracts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { loadCachedPages, saveCachedPages } from "../cache.ts";
 import type { ServerConfig } from "../config.ts";
-import { NotionAdapter } from "../notion/client.ts";
+import { loadKnowledgeCorpus, searchKnowledgeChunks } from "../knowledge.ts";
 import { SYSTEM_PROMPT, citationRepairPrompt, researchPrompt } from "../prompts.ts";
 import { citationSources, validateCitations } from "../retrieval/citations.ts";
 import { chunkPages, rankChunks } from "../retrieval/index.ts";
@@ -57,26 +56,36 @@ export function registerResearchTool(mcp: McpServer, config: ServerConfig): void
 
         await log(mcp, "info", "retrieval", "Loading approved Notion page tree");
         await progress(extra, 15, "Loading approved Notion corpus");
-        let pages = await loadCachedPages(cacheRoot, config.cacheTtlSeconds);
-        const cacheHit = pages !== null;
-        if (!pages) {
-          pages = await new NotionAdapter({
-            token: config.notionToken,
-            rootPageId: config.notionRootPageId,
-            baseUrl: config.notionBaseUrl,
-            version: config.notionVersion,
-            maxPages: config.maxPages,
-            maxBlocks: config.maxBlocks,
-          }).fetchPageTree(extra.signal);
-          await saveCachedPages(cacheRoot, pages);
-        }
+        const { pages, cacheHit } = await loadKnowledgeCorpus(
+          cacheRoot,
+          config,
+          extra.signal,
+        );
         await log(mcp, "info", "retrieval", "Approved corpus loaded", {
           cacheHit,
           pageCount: pages.length,
         });
 
         const chunks = chunkPages(pages);
-        const selected = rankChunks(query, chunks);
+        const selectedFromSearch = await searchKnowledgeChunks(
+          query,
+          config,
+          extra.signal,
+        ).catch(async (error) => {
+          await log(
+            mcp,
+            "warning",
+            "retrieval",
+            "Notion search failed; using cached corpus",
+            {
+              error: safeServerError(error),
+            },
+          );
+          return [];
+        });
+        const selected = selectedFromSearch.length
+          ? selectedFromSearch
+          : rankChunks(query, chunks);
         await progress(extra, 50, "Ranked approved evidence");
         await log(mcp, "info", "retrieval", "Evidence ranking complete", {
           chunkCount: chunks.length,

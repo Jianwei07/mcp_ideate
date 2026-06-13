@@ -11,6 +11,12 @@
       "title": "Harden citation validation failure flow",
       "spec": ".planning/specs/02-citation-validation-hardening",
       "completed": true
+    },
+    {
+      "id": "03",
+      "title": "Add Notion MCP-style read tools",
+      "spec": ".planning/specs/03-notion-mcp-style-tools",
+      "completed": true
     }
   ]
 }

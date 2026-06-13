@@ -69,6 +69,66 @@ describe("secure retrieval", () => {
     expect(selected[0].pageTitle).toBe("Lecture 10: What’s Going On Inside My Model?");
   });
 
+  test("filters to the requested explicit lecture number", () => {
+    const selected = rankChunks(
+      "Tell me more about Lecture 5",
+      chunkPages([
+        {
+          pageId: "l10",
+          title: "Lecture 10: What’s Going On Inside My Model?",
+          url: "https://notion.example/l10",
+          blocks: [
+            {
+              blockId: "l10-body",
+              blockType: "paragraph",
+              text: "Saliency maps and occlusion sensitivity explain model behavior.",
+              headingLevel: null,
+            },
+          ],
+        },
+        {
+          pageId: "l05",
+          title: "Lecture 5: Error Analysis",
+          url: "https://notion.example/l05",
+          blocks: [
+            {
+              blockId: "l05-body",
+              blockType: "paragraph",
+              text: "Error analysis helps teams inspect mislabeled examples and model failures.",
+              headingLevel: null,
+            },
+          ],
+        },
+      ]),
+    );
+
+    expect(selected).toHaveLength(1);
+    expect(selected[0].pageTitle).toBe("Lecture 5: Error Analysis");
+  });
+
+  test("returns no evidence when an explicit lecture is missing", () => {
+    const selected = rankChunks(
+      "Tell me more about Lecture 5",
+      chunkPages([
+        {
+          pageId: "l10",
+          title: "Lecture 10: What’s Going On Inside My Model?",
+          url: "https://notion.example/l10",
+          blocks: [
+            {
+              blockId: "l10-body",
+              blockType: "paragraph",
+              text: "Saliency maps and occlusion sensitivity explain model behavior.",
+              headingLevel: null,
+            },
+          ],
+        },
+      ]),
+    );
+
+    expect(selected).toEqual([]);
+  });
+
   test("requires claim-level citations from the selected evidence", () => {
     const valid = validateCitations("Teams should monitor loss [S1].", [
       { ...chunks[0], sourceId: "S1" },

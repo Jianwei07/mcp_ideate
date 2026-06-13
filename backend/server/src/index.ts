@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadServerConfig } from "./config.ts";
+import { registerNotionTools } from "./tools/notion.ts";
 import { registerResearchTool } from "./tools/research.ts";
 
 const config = loadServerConfig();
@@ -19,6 +20,7 @@ const mcp = new McpServer(
 );
 
 registerResearchTool(mcp, config);
+registerNotionTools(mcp, config);
 
 const transport = new StdioServerTransport();
 await mcp.connect(transport);

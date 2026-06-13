@@ -22,3 +22,15 @@ export type SourceChunk = {
   text: string;
   score: number;
 };
+
+export type NotionSearchPage = {
+  pageId: string;
+  title: string;
+  url: string;
+};
+
+export type NotionMarkdownPage = NotionSearchPage & {
+  markdown: string;
+  truncated: boolean;
+  unknownBlockIds: string[];
+};

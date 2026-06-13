@@ -1,4 +1,9 @@
-import type { NormalizedBlock, NormalizedPage } from "../types.ts";
+import type {
+  NormalizedBlock,
+  NormalizedPage,
+  NotionMarkdownPage,
+  NotionSearchPage,
+} from "../types.ts";
 
 const TEXT_BLOCK_TYPES = new Set([
   "bookmark",
@@ -74,6 +79,58 @@ export class NotionAdapter {
     return pages;
   }
 
+  async searchPages(
+    query: string,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<NotionSearchPage[]> {
+    const payload = await this.request("/v1/search", undefined, signal, {
+      method: "POST",
+      body: JSON.stringify({
+        query,
+        page_size: limit,
+        filter: { property: "object", value: "page" },
+        sort: { timestamp: "last_edited_time", direction: "descending" },
+      }),
+    });
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    return results.filter(isRecord).flatMap((page) => {
+      if (page.object !== "page") return [];
+      const pageId = compactId(stringValue(page.id));
+      if (!pageId) return [];
+      return [
+        {
+          pageId,
+          title: pageTitle(page),
+          url: stringValue(page.url) || `https://www.notion.so/${pageId}`,
+        },
+      ];
+    });
+  }
+
+  async fetchPageMarkdown(
+    pageIdOrUrl: string,
+    signal?: AbortSignal,
+  ): Promise<NotionMarkdownPage> {
+    const pageId = pageIdFromInput(pageIdOrUrl);
+    const page = await this.request(`/v1/pages/${pageId}`, undefined, signal);
+    const markdown = await this.request(
+      `/v1/pages/${pageId}/markdown`,
+      undefined,
+      signal,
+    );
+    return {
+      pageId,
+      title: pageTitle(page),
+      url: stringValue(page.url) || `https://www.notion.so/${pageId}`,
+      markdown: stringValue(markdown.markdown),
+      truncated: markdown.truncated === true,
+      unknownBlockIds: Array.isArray(markdown.unknown_block_ids)
+        ? markdown.unknown_block_ids.map(stringValue).filter(Boolean)
+        : [],
+    };
+  }
+
   private async walkContainer(
     containerId: string,
     signal?: AbortSignal,
@@ -142,12 +199,14 @@ export class NotionAdapter {
     path: string,
     params?: URLSearchParams,
     signal?: AbortSignal,
+    init: RequestInit = {},
   ): Promise<Record<string, unknown>> {
     const url = new URL(`${this.config.baseUrl}${path}`);
     if (params) url.search = params.toString();
 
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const response = await fetch(url, {
+        ...init,
         headers: this.headers,
         signal,
       });
@@ -167,6 +226,18 @@ export class NotionAdapter {
       return payload;
     }
     throw new Error("Notion request failed after retries");
+  }
+}
+
+function pageIdFromInput(value: string): string {
+  const trimmed = value.trim();
+  try {
+    const url = new URL(trimmed);
+    const tail = url.pathname.split("/").filter(Boolean).at(-1) ?? trimmed;
+    const match = /([0-9a-f]{32})/i.exec(tail.replaceAll("-", ""));
+    return compactId(match?.[1] ?? tail);
+  } catch {
+    return compactId(trimmed);
   }
 }
 

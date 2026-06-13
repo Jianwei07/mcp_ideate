@@ -35,7 +35,9 @@ const STOP_WORDS = new Set([
 export function tokenize(text: string): string[] {
   return (text.match(TOKEN_RE) ?? [])
     .map((token) => token.toLowerCase())
-    .filter((token) => token.length > 1 && !STOP_WORDS.has(token));
+    .filter(
+      (token) => (token.length > 1 || /^\d+$/.test(token)) && !STOP_WORDS.has(token),
+    );
 }
 
 export function chunkPages(pages: NormalizedPage[], maxChars = 1800): SourceChunk[] {
@@ -97,12 +99,18 @@ export function rankChunks(
 ): SourceChunk[] {
   const queryTerms = tokenize(query);
   if (queryTerms.length === 0 || chunks.length === 0) return [];
+  const requestedLecture = requestedLectureNumber(query);
+  const candidateChunks =
+    requestedLecture === null
+      ? chunks
+      : chunks.filter((chunk) => lectureNumber(chunk.pageTitle) === requestedLecture);
+  if (candidateChunks.length === 0) return [];
   const latestLecture = latestLectureNumber(chunks);
   const wantsLatestLecture =
     /\b(latest|recent|newest)\b/i.test(query) &&
     /\b(lecture|lesson|class)\b/i.test(query);
 
-  const documentTerms = chunks.map((chunk) => new Set(tokenize(chunk.text)));
+  const documentTerms = candidateChunks.map((chunk) => new Set(tokenize(chunk.text)));
   const documentFrequency = new Map<string, number>();
   for (const terms of documentTerms) {
     for (const term of terms) {
@@ -111,7 +119,7 @@ export function rankChunks(
   }
 
   const phrase = queryTerms.join(" ");
-  const scored = chunks.flatMap((chunk, index) => {
+  const scored = candidateChunks.flatMap((chunk, index) => {
     const bodyCounts = counts(tokenize(chunk.text));
     const headingCounts = counts(
       tokenize([chunk.pageTitle, ...chunk.headingPath].join(" ")),
@@ -120,7 +128,9 @@ export function rankChunks(
 
     for (const term of queryTerms) {
       const inverseFrequency =
-        Math.log((chunks.length + 1) / ((documentFrequency.get(term) ?? 0) + 1)) + 1;
+        Math.log(
+          (candidateChunks.length + 1) / ((documentFrequency.get(term) ?? 0) + 1),
+        ) + 1;
       score += inverseFrequency * Math.min(bodyCounts.get(term) ?? 0, 3);
       score += inverseFrequency * Math.min(headingCounts.get(term) ?? 0, 2) * 1.8;
     }
@@ -147,6 +157,11 @@ export function rankChunks(
     ...chunk,
     sourceId: `S${index + 1}`,
   }));
+}
+
+function requestedLectureNumber(query: string): number | null {
+  const match = query.match(/\b(?:l|lecture|lesson|class)\s*0*(\d+)\b/i);
+  return match ? Number.parseInt(match[1], 10) : null;
 }
 
 function latestLectureNumber(chunks: SourceChunk[]): number | null {
