@@ -1,0 +1,37 @@
+[
+  {
+    "question": "What is the disciplined process for developing an ML project?",
+    "expected_terms": ["discipline", "development", "decision"],
+    "expected_page_hint": "Full Cycle"
+  },
+  {
+    "question": "How do supervised and self-supervised learning differ?",
+    "expected_terms": ["supervised", "self-supervised"],
+    "expected_page_hint": "Supervised"
+  },
+  {
+    "question": "What signals should teams monitor during model development?",
+    "expected_terms": ["monitor", "signal"],
+    "expected_page_hint": "Full Cycle"
+  },
+  {
+    "question": "What is adversarial robustness?",
+    "expected_terms": ["adversarial", "robustness"],
+    "expected_page_hint": "Adversarial"
+  },
+  {
+    "question": "How is the loss function defined in Deep Q-Learning?",
+    "expected_terms": ["loss", "bellman"],
+    "expected_page_hint": "Reinforcement"
+  },
+  {
+    "question": "What is the standard fine-tuning workflow described in the notes?",
+    "expected_terms": ["template", "dataset", "train", "deploy"],
+    "expected_page_hint": "Stanford CS230"
+  },
+  {
+    "question": "How can plotting a loss function help inspect a model?",
+    "expected_terms": ["loss", "model"],
+    "expected_page_hint": "Inside My Model"
+  }
+]

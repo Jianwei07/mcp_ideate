@@ -1,0 +1,28 @@
+{
+  "todos": [
+    {
+      "id": "01",
+      "title": "Add Notion read adapter and contracts",
+      "spec": ".planning/specs/03-notion-mcp-style-tools/01-adapter-contracts.md",
+      "completed": true
+    },
+    {
+      "id": "02",
+      "title": "Expose Notion-style MCP tools",
+      "spec": ".planning/specs/03-notion-mcp-style-tools/02-mcp-tools.md",
+      "completed": true
+    },
+    {
+      "id": "03",
+      "title": "Route research through search/fetch evidence",
+      "spec": ".planning/specs/03-notion-mcp-style-tools/03-research-routing.md",
+      "completed": true
+    },
+    {
+      "id": "04",
+      "title": "Verify Notion tool flow and docs",
+      "spec": ".planning/specs/03-notion-mcp-style-tools/04-tests-docs.md",
+      "completed": true
+    }
+  ]
+}

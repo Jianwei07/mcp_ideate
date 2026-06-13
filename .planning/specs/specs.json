@@ -1,0 +1,22 @@
+{
+  "todos": [
+    {
+      "id": "01",
+      "title": "Export backend services from uv to bun",
+      "spec": ".planning/specs/01-pivot-uv-to-bun",
+      "completed": true
+    },
+    {
+      "id": "02",
+      "title": "Harden citation validation failure flow",
+      "spec": ".planning/specs/02-citation-validation-hardening",
+      "completed": true
+    },
+    {
+      "id": "03",
+      "title": "Add Notion MCP-style read tools",
+      "spec": ".planning/specs/03-notion-mcp-style-tools",
+      "completed": true
+    }
+  ]
+}

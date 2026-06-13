@@ -2,9 +2,41 @@
 __pycache__/
 *.py[codz]
 *$py.class
+agents.md
 
 # C extensions
 *.so
+
+# Frontend dependencies (Bun / Node)
+node_modules/
+.bun/
+.bun-cache/
+.npm/
+.pnpm-store/
+.yarn/
+
+# Frontend build output and tool caches
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+frontend/coverage/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Frontend local configuration and logs
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+frontend/*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/bun-error.log*
+
+# Keep the Bun lockfile for reproducible installs
+!frontend/bun.lock
 
 # Distribution / packaging
 .Python
