@@ -32,3 +32,14 @@ Use a Bun/TypeScript workspace inside `backend/` with `backend/client/`,
 `backend/server/`, `backend/contracts/`, and `backend/db/`. Use Drizzle with
 `bun:sqlite`. Preserve `frontend/` as the browser application and
 `roots_sample/` as course reference.
+
+## Docs
+
+- MCP best practices: https://modelcontextprotocol.info/docs/best-practices/
+  Use for tool design, trust boundaries, sampling, and protocol behavior.
+- MCP client best practices:
+  https://modelcontextprotocol.io/docs/develop/clients/client-best-practices
+  Use before changing host/client approvals, roots, sampling, and permissions.
+- Anthropic code execution with MCP:
+  https://www.anthropic.com/engineering/code-execution-with-mcp
+  Use for sandboxing, tool-risk, and server/client security model decisions.

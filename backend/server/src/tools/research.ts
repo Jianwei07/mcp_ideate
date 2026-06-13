@@ -125,7 +125,7 @@ export function registerResearchTool(mcp: McpServer, config: ServerConfig): void
           sampled = await sampleAnswer(
             mcp,
             extra,
-            citationRepairPrompt(query, selected, sampled.answer),
+            citationRepairPrompt(query, selected, sampled.answer, validation),
           );
           if (sampled.status === "insufficient_evidence") {
             await progress(extra, 100, "Model found insufficient evidence");
@@ -143,8 +143,17 @@ export function registerResearchTool(mcp: McpServer, config: ServerConfig): void
         await log(mcp, "info", "validation", "Citation validation complete", {
           citationValid: validation.valid,
           citedSourceIds: validation.citedSourceIds,
+          invalidSourceIds: validation.invalidSourceIds,
+          claimCount: validation.claimCount,
+          uncitedClaimCount: validation.uncitedClaimCount,
         });
-        await progress(extra, 100, "Research response validated");
+        await progress(
+          extra,
+          100,
+          validation.valid
+            ? "Research response citation validation passed"
+            : "Citation validation failed; withholding response",
+        );
 
         return toolResult(
           validation.valid

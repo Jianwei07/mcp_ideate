@@ -1,0 +1,34 @@
+{
+  "todos": [
+    {
+      "id": "01",
+      "title": "Project reference context",
+      "spec": ".planning/specs/02-citation-validation-hardening/01-project-reference-context.md",
+      "completed": true
+    },
+    {
+      "id": "02",
+      "title": "Citation validation diagnostics",
+      "spec": ".planning/specs/02-citation-validation-hardening/02-citation-validation-diagnostics.md",
+      "completed": true
+    },
+    {
+      "id": "03",
+      "title": "Repair and progress semantics",
+      "spec": ".planning/specs/02-citation-validation-hardening/03-repair-and-progress-semantics.md",
+      "completed": true
+    },
+    {
+      "id": "04",
+      "title": "Host domain error presentation",
+      "spec": ".planning/specs/02-citation-validation-hardening/04-host-domain-error-presentation.md",
+      "completed": true
+    },
+    {
+      "id": "05",
+      "title": "Regression tests and quality gate",
+      "spec": ".planning/specs/02-citation-validation-hardening/05-regression-tests-and-quality-gate.md",
+      "completed": true
+    }
+  ]
+}

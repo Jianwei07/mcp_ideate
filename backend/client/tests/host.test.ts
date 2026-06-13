@@ -158,6 +158,57 @@ describe("host API", () => {
       return (await hostTurnStatus(baseUrl, started.run_id)) === "cancelled";
     });
   });
+
+  test("persists citation validation failure as a domain error", async () => {
+    const notion = fakeNotionServer();
+    const ollama = fakeOllamaServer("Monitor loss and data quality.");
+    servers.push(notion, ollama);
+    const previousEnv = setNotionEnv(notion);
+    const config = {
+      ...testConfig(),
+      ollamaBaseUrl: `http://${ollama.hostname}:${ollama.port}`,
+      serverEntry: join(process.cwd(), "server/src/index.ts"),
+    };
+    const server = createHost(config, { preflight: false });
+    servers.push(server);
+    const baseUrl = `http://${server.hostname}:${server.port}`;
+
+    try {
+      const response = await fetch(`${baseUrl}/api/runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "What should teams monitor?" }),
+      });
+      const started = (await response.json()) as { run_id: string };
+
+      await waitFor(async () => {
+        const approval = (await (
+          await fetch(`${baseUrl}/api/runs/${started.run_id}/sampling`)
+        ).json()) as { status: string };
+        return approval.status === "pending";
+      });
+      await fetch(`${baseUrl}/api/runs/${started.run_id}/sampling`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "approve_always" }),
+      });
+
+      await waitFor(async () => {
+        const turn = await hostTurn(baseUrl, started.run_id);
+        return turn?.status === "error";
+      });
+
+      const turn = await hostTurn(baseUrl, started.run_id);
+      expect(turn).toMatchObject({
+        status: "error",
+        errorCode: "CITATION_VALIDATION_FAILED",
+        errorMessage: "Response withheld because citation validation failed.",
+        retryable: false,
+      });
+    } finally {
+      restoreEnv(previousEnv);
+    }
+  });
 });
 
 function testConfig(): ClientConfig {
@@ -187,15 +238,133 @@ async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<voi
 }
 
 async function hostTurnStatus(baseUrl: string, turnId: string): Promise<string | null> {
+  return (await hostTurn(baseUrl, turnId))?.status ?? null;
+}
+
+async function hostTurn(
+  baseUrl: string,
+  turnId: string,
+): Promise<{
+  id: string;
+  status: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  retryable: boolean | null;
+} | null> {
   const sessions = (await (await fetch(`${baseUrl}/api/sessions`)).json()) as {
     sessions: Array<{ id: string }>;
   };
   for (const session of sessions.sessions) {
     const restored = (await (
       await fetch(`${baseUrl}/api/sessions/${session.id}`)
-    ).json()) as { session: { turns?: Array<{ id: string; status: string }> } };
+    ).json()) as {
+      session: {
+        turns?: Array<{
+          id: string;
+          status: string;
+          errorCode: string | null;
+          errorMessage: string | null;
+          retryable: boolean | null;
+        }>;
+      };
+    };
     const turn = restored.session.turns?.find((item) => item.id === turnId);
-    if (turn) return turn.status;
+    if (turn) return turn;
   }
   return null;
+}
+
+function setNotionEnv(
+  server: Bun.Server<undefined>,
+): Record<string, string | undefined> {
+  const previous = {
+    NOTION_TOKEN: process.env.NOTION_TOKEN,
+    NOTION_ROOT_PAGE_ID: process.env.NOTION_ROOT_PAGE_ID,
+    NOTION_BASE_URL: process.env.NOTION_BASE_URL,
+    NOTION_MAX_PAGES: process.env.NOTION_MAX_PAGES,
+    NOTION_MAX_BLOCKS: process.env.NOTION_MAX_BLOCKS,
+  };
+  process.env.NOTION_TOKEN = "test-token";
+  process.env.NOTION_ROOT_PAGE_ID = "rootpage";
+  process.env.NOTION_BASE_URL = `http://${server.hostname}:${server.port}`;
+  process.env.NOTION_MAX_PAGES = "3";
+  process.env.NOTION_MAX_BLOCKS = "20";
+  return previous;
+}
+
+function restoreEnv(previous: Record<string, string | undefined>): void {
+  for (const [key, value] of Object.entries(previous)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
+function fakeNotionServer(): Bun.Server<undefined> {
+  return Bun.serve({
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname === "/v1/pages/rootpage") {
+        return Response.json({
+          id: "rootpage",
+          url: "https://notion.example/rootpage",
+          properties: {
+            title: { type: "title", title: [{ plain_text: "Monitoring" }] },
+          },
+        });
+      }
+      if (url.pathname === "/v1/blocks/rootpage/children") {
+        return Response.json({
+          has_more: false,
+          next_cursor: null,
+          results: [
+            {
+              id: "heading1",
+              type: "heading_2",
+              has_children: false,
+              heading_2: { rich_text: [{ plain_text: "Monitoring signals" }] },
+            },
+            {
+              id: "body1",
+              type: "paragraph",
+              has_children: false,
+              paragraph: {
+                rich_text: [
+                  { plain_text: "Monitor data quality, loss, and model performance." },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      return Response.json({ error: "not_found" }, { status: 404 });
+    },
+  });
+}
+
+function fakeOllamaServer(answer: string): Bun.Server<undefined> {
+  return Bun.serve({
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname === "/api/chat") {
+        return Response.json({
+          message: {
+            content: JSON.stringify({
+              status: "answered",
+              answer,
+              rationale: "The approved source names both signals.",
+            }),
+          },
+          prompt_eval_count: 11,
+          eval_count: 7,
+          total_duration: 25_000_000,
+          load_duration: 0,
+          prompt_eval_duration: 10_000_000,
+          eval_duration: 15_000_000,
+        });
+      }
+      return Response.json({ error: "not_found" }, { status: 404 });
+    },
+  });
 }

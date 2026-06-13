@@ -11,3 +11,5 @@
 - Native model thinking is optional, capability-gated, masked, and ephemeral.
 - Use Drizzle with `bun:sqlite`; do not add Prisma or a remote database.
 - Defer LangGraph until AI Ops requires branching, loops, and checkpoints.
+- Citation validation stays strict and fail-closed: every claim-like sentence must
+  cite selected evidence, and failed repair withholds the generated response.

@@ -11,7 +11,7 @@ observable MCP foundation that can later expand into AI Ops incident triage.
 - Plan and checkpoints: `.planning/current/PLAN.md`
 - Accepted decisions: `.planning/current/DECISIONS.md`
 - Checklist: `.planning/current/TODO.md`
-- Executable specs: `.planning/spec/specs.json`
+- Executable specs: `.planning/specs/specs.json`
 - Current architecture map: `.planning/codebase/`
 - Repository constraints: `AGENTS.md`
 
@@ -66,6 +66,14 @@ observable MCP foundation that can later expand into AI Ops incident triage.
   - full `cd backend && bun run check` passes with 14 tests and frontend build;
   - `cd backend && bun run dev` reaches healthy long-running startup;
   - no backend Python runtime files remain.
+- Completed citation validation hardening session
+  `.planning/specs/02-citation-validation-hardening/`:
+  - project docs links now include local purpose annotations;
+  - strict fail-closed citation validation decision recorded;
+  - validator returns safe diagnostics for missing, invalid, and uncited claims;
+  - repair prompt receives safe validation diagnostics;
+  - final progress text now distinguishes citation pass from withheld response;
+  - host persists citation failure as `CITATION_VALIDATION_FAILED` domain error.
 
 ## Verified
 
@@ -87,6 +95,11 @@ observable MCP foundation that can later expand into AI Ops incident triage.
 - `cd backend && bun run check` passes after final cutover: 14 tests.
 - `cd backend && bun run dev` reaches healthy startup; timeout is expected for
   the long-running supervisor.
+- `cd backend && bun test server/tests` passes after citation diagnostics: 7 tests.
+- `cd backend && bun test server/tests && bun test client/tests` passes after
+  citation hardening: 25 tests.
+- `cd backend && bun run check` passes after citation hardening: lint, format,
+  typecheck, 25 tests, and frontend build.
 
 ## Next Implementation Order
 
@@ -105,6 +118,8 @@ observable MCP foundation that can later expand into AI Ops incident triage.
   course features scheduled for deprecation under SEP-2577.
 - Legacy backend Python runtime files were removed after Bun verification passed.
 - No commit has been made.
+- Jayden spec validator script was not found under `/Users/jayden77/.agents`, so
+  spec validation could not be run.
 
 ## Dirty Tree
 

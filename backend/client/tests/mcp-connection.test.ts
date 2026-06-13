@@ -112,57 +112,61 @@ describe("McpConnection", () => {
   });
 
   test("calls the real stdio server and serves client-side sampling", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "secure-research-stdio-"));
-    const notion = fakeNotionServer();
-    const previousEnv = {
-      NOTION_TOKEN: process.env.NOTION_TOKEN,
-      NOTION_ROOT_PAGE_ID: process.env.NOTION_ROOT_PAGE_ID,
-      NOTION_BASE_URL: process.env.NOTION_BASE_URL,
-      NOTION_MAX_PAGES: process.env.NOTION_MAX_PAGES,
-      NOTION_MAX_BLOCKS: process.env.NOTION_MAX_BLOCKS,
-    };
-    process.env.NOTION_TOKEN = "test-token";
-    process.env.NOTION_ROOT_PAGE_ID = "rootpage";
-    process.env.NOTION_BASE_URL = `http://${notion.hostname}:${notion.port}`;
-    process.env.NOTION_MAX_PAGES = "3";
-    process.env.NOTION_MAX_BLOCKS = "20";
+    await withRealStdioConnection(
+      [fakeSample()],
+      async (connection, events, samples) => {
+        const result = await connection.callResearch("What should teams monitor?");
 
-    const samples: unknown[] = [];
-    const events: McpConnectionEvent[] = [];
-    const connection = new McpConnection({
-      config: {
-        serverEntry: join(process.cwd(), "server/src/index.ts"),
-        serverEnvFile: null,
+        expect(result.status).toBe("answered");
+        expect(result.sources[0].pageTitle).toBe("Monitoring");
+        expect(samples).toHaveLength(1);
+        expect(eventMethods(events)).toContain("sampling/createMessage");
+        expect(eventMethods(events)).toContain("roots/list");
       },
-      cacheRootPath: join(directory, "cache"),
-      approveSampling: async () => "approve",
-      ollama: {
-        model: "fake-model",
-        async sample(params) {
-          samples.push(params);
-          return fakeSample();
-        },
-      },
-      emit(event) {
-        events.push(event);
-      },
-    });
+    );
+  });
 
-    try {
-      await connection.connect();
-      const result = await connection.callResearch("What should teams monitor?");
+  test("repairs answers that fail strict citation validation", async () => {
+    await withRealStdioConnection(
+      [fakeSample("Monitor loss and data quality."), fakeSample()],
+      async (connection, events, samples) => {
+        const result = await connection.callResearch("What should teams monitor?");
 
-      expect(result.status).toBe("answered");
-      expect(result.sources[0].pageTitle).toBe("Monitoring");
-      expect(samples).toHaveLength(1);
-      expect(eventMethods(events)).toContain("sampling/createMessage");
-      expect(eventMethods(events)).toContain("roots/list");
-    } finally {
-      await connection.close();
-      notion.stop(true);
-      restoreEnv(previousEnv);
-      await rm(directory, { recursive: true, force: true });
-    }
+        expect(result.status).toBe("answered");
+        expect(result.citationValid).toBe(true);
+        expect(samples).toHaveLength(2);
+        expect(
+          events.some(
+            (event) =>
+              event.kind === "progress" &&
+              event.summary === "Research response citation validation passed",
+          ),
+        ).toBe(true);
+      },
+    );
+  });
+
+  test("withholds answers when citation repair still fails", async () => {
+    await withRealStdioConnection(
+      [
+        fakeSample("Monitor loss and data quality."),
+        fakeSample("Monitor loss and data quality."),
+      ],
+      async (connection, events, samples) => {
+        const result = await connection.callResearch("What should teams monitor?");
+
+        expect(result.status).toBe("error");
+        expect(result.citationValid).toBe(false);
+        expect(samples).toHaveLength(2);
+        expect(
+          events.some(
+            (event) =>
+              event.kind === "progress" &&
+              event.summary === "Citation validation failed; withholding response",
+          ),
+        ).toBe(true);
+      },
+    );
   });
 });
 
@@ -306,11 +310,11 @@ class FakeServerTransport implements Transport {
   }
 }
 
-function fakeSample() {
+function fakeSample(answer = "Monitor loss and data quality [S1].") {
   return {
     content: JSON.stringify({
       status: "answered",
-      answer: "Monitor loss and data quality [S1].",
+      answer,
       rationale: "The approved source names both signals.",
     }),
     thinking: null,
@@ -323,6 +327,64 @@ function fakeSample() {
       evalDurationMs: 15,
     },
   };
+}
+
+async function withRealStdioConnection(
+  sampleResults: ReturnType<typeof fakeSample>[],
+  run: (
+    connection: McpConnection,
+    events: McpConnectionEvent[],
+    samples: unknown[],
+  ) => Promise<void>,
+): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), "secure-research-stdio-"));
+  const notion = fakeNotionServer();
+  const previousEnv = {
+    NOTION_TOKEN: process.env.NOTION_TOKEN,
+    NOTION_ROOT_PAGE_ID: process.env.NOTION_ROOT_PAGE_ID,
+    NOTION_BASE_URL: process.env.NOTION_BASE_URL,
+    NOTION_MAX_PAGES: process.env.NOTION_MAX_PAGES,
+    NOTION_MAX_BLOCKS: process.env.NOTION_MAX_BLOCKS,
+  };
+  process.env.NOTION_TOKEN = "test-token";
+  process.env.NOTION_ROOT_PAGE_ID = "rootpage";
+  process.env.NOTION_BASE_URL = `http://${notion.hostname}:${notion.port}`;
+  process.env.NOTION_MAX_PAGES = "3";
+  process.env.NOTION_MAX_BLOCKS = "20";
+
+  const samples: unknown[] = [];
+  const events: McpConnectionEvent[] = [];
+  let sampleIndex = 0;
+  const connection = new McpConnection({
+    config: {
+      serverEntry: join(process.cwd(), "server/src/index.ts"),
+      serverEnvFile: null,
+    },
+    cacheRootPath: join(directory, "cache"),
+    approveSampling: async () => "approve",
+    ollama: {
+      model: "fake-model",
+      async sample(params) {
+        samples.push(params);
+        const result = sampleResults[Math.min(sampleIndex, sampleResults.length - 1)];
+        sampleIndex += 1;
+        return result;
+      },
+    },
+    emit(event) {
+      events.push(event);
+    },
+  });
+
+  try {
+    await connection.connect();
+    await run(connection, events, samples);
+  } finally {
+    await connection.close();
+    notion.stop(true);
+    restoreEnv(previousEnv);
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 function fakeNotionServer(): Bun.Server<undefined> {

@@ -70,16 +70,56 @@ describe("secure retrieval", () => {
   });
 
   test("requires claim-level citations from the selected evidence", () => {
-    expect(
-      validateCitations("Teams should monitor loss [S1].", [
-        { ...chunks[0], sourceId: "S1" },
-      ]).valid,
-    ).toBeTrue();
-    expect(
-      validateCitations("Teams should monitor loss.", [
-        { ...chunks[0], sourceId: "S1" },
-      ]).valid,
-    ).toBeFalse();
+    const valid = validateCitations("Teams should monitor loss [S1].", [
+      { ...chunks[0], sourceId: "S1" },
+    ]);
+    expect(valid).toMatchObject({
+      valid: true,
+      citedSourceIds: ["S1"],
+      invalidSourceIds: [],
+      claimCount: 1,
+      uncitedClaimCount: 0,
+      hasCitations: true,
+    });
+
+    const missing = validateCitations("Teams should monitor loss.", [
+      { ...chunks[0], sourceId: "S1" },
+    ]);
+    expect(missing).toMatchObject({
+      valid: false,
+      citedSourceIds: [],
+      invalidSourceIds: [],
+      claimCount: 1,
+      uncitedClaimCount: 1,
+      hasCitations: false,
+    });
+  });
+
+  test("reports invalid and mixed citation markers", () => {
+    const invalid = validateCitations("Teams should monitor loss [S6].", [
+      { ...chunks[0], sourceId: "S1" },
+    ]);
+    expect(invalid).toMatchObject({
+      valid: false,
+      citedSourceIds: ["S6"],
+      invalidSourceIds: ["S6"],
+      claimCount: 1,
+      uncitedClaimCount: 1,
+      hasCitations: true,
+    });
+
+    const mixed = validateCitations(
+      "Teams should monitor loss [S1]. They should also inspect drift.",
+      [{ ...chunks[0], sourceId: "S1" }],
+    );
+    expect(mixed).toMatchObject({
+      valid: false,
+      citedSourceIds: ["S1"],
+      invalidSourceIds: [],
+      claimCount: 2,
+      uncitedClaimCount: 1,
+      hasCitations: true,
+    });
   });
 
   test("identifies trivial greetings without rejecting research questions", () => {

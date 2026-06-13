@@ -39,6 +39,8 @@ const RUN_TIMEOUT_MS = 180_000;
 const SSE_HEARTBEAT_MS = 5_000;
 const NON_RESEARCH_MESSAGE =
   "Ask a standalone research question about the approved CS230 notes.";
+const CITATION_VALIDATION_MESSAGE =
+  "Response withheld because citation validation failed.";
 
 export function createHost(
   config: ClientConfig,
@@ -567,11 +569,15 @@ function finishRun(
   activeRuns: Map<string, ActiveRun>,
   durationMs: number,
 ): void {
+  const citationFailure = result.status === "error" && !result.citationValid;
   store.updateTurn(runId, {
     status: result.status === "error" ? "error" : "complete",
     answer: result.answer,
     rationale: result.rationale,
     totalDurationMs: durationMs,
+    errorCode: citationFailure ? "CITATION_VALIDATION_FAILED" : null,
+    errorMessage: citationFailure ? CITATION_VALIDATION_MESSAGE : null,
+    retryable: citationFailure ? false : null,
   });
   store.replaceCitations(runId, result.sources);
   broadcast(activeRuns, runId, {
@@ -581,7 +587,7 @@ function finishRun(
     type: "result",
     stage: "validation",
     level: result.status === "error" ? "error" : "info",
-    message: "Research run completed",
+    message: citationFailure ? CITATION_VALIDATION_MESSAGE : "Research run completed",
     data: { result: toFrontendResult(result), duration_ms: durationMs },
   });
 }
